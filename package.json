@@ -1,0 +1,21 @@
+{
+  "name": "finance-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.24.0",
+    "discord.js": "^13.5.0",
+    "dotenv": "^10.0.0",
+    "mysql": "^2.18.1",
+    "xhr": "^2.6.0",
+    "xhr-request": "^1.1.0",
+    "xmlhttprequest": "^1.8.0"
+  }
+}
