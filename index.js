@@ -305,7 +305,7 @@ function sendNewItemMessage(channel, userProg) {
                         description = "All information about the item you just created";
                         embed.addField("Hourly rate", lastItem.rate + " EUR", true);
                         embed.addField("Hours spent", lastItem.quantity + "", true);
-                        embed.addField("Subtotal", round(lastItem.rate * lastItem.quantity));
+                        embed.addField("Subtotal", round(lastItem.rate * lastItem.quantity) + " EUR");
                     }
                 } else if (lastItem.measure_unit === "AMOUNT") {
                     embed.addField("Measure unit", "Fixed amount", true);
