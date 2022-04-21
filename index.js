@@ -1,4 +1,11 @@
 require('dotenv').config({path: __dirname + '/.env'});
+const CustomPlugins = require("./custom_plugins");
+const HttpServer = require("./httpServer");
+
+const pluginInstance = new CustomPlugins();
+const httpInstance = new HttpServer(pluginInstance);
+
+return;
 
 const Discord = require('discord.js');
 const {MessageEmbed, MessageActionRow, MessageButton} = require("discord.js");

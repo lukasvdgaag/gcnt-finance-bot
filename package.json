@@ -11,8 +11,10 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^0.24.0",
+    "body-parser": "^1.20.0",
     "discord.js": "^13.5.0",
     "dotenv": "^10.0.0",
+    "express": "^4.17.3",
     "mysql": "^2.18.1",
     "xhr": "^2.6.0",
     "xhr-request": "^1.1.0",
