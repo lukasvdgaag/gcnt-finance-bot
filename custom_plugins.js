@@ -2,9 +2,6 @@ const Discord = require("discord.js");
 const dotenv = require("dotenv");
 const {MessageEmbed, MessageButton, MessageActionRow} = require("discord.js");
 const mysql = require('mysql');
-const {SlashCommandBuilder} = require('@discordjs/builders');
-const {REST} = require('@discordjs/rest');
-const {Routes} = require('discord-api-types/v9');
 
 const Status = {
     BUDGETING: 'BUDGETING',

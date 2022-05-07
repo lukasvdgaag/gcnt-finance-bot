@@ -5,8 +5,6 @@ const HttpServer = require("./httpServer");
 const pluginInstance = new CustomPlugins();
 const httpInstance = new HttpServer(pluginInstance);
 
-return;
-
 const Discord = require('discord.js');
 const {MessageEmbed, MessageActionRow, MessageButton} = require("discord.js");
 const {createDraft, sendInvoice, getQRCode, sendRequest, getItemField, getTotal, round, getPayPalUserInfo, getAccessToken} = require("./paypal");
@@ -225,13 +223,17 @@ async function sendUpdateNewInvoiceMessage(channel, ownerId, userProg) {
     }
 
     if (userProg.sent) {
-        if (userProg.private_message == null) {
-            const customerId = userProg.customer.id;
-            const fetchedUser = await client.users.fetch(customerId, {force: true});
-            const sentMsg = await fetchedUser.send(msgObj);
-            userProg.private_message = sentMsg;
-        } else {
-            await userProg.private_message.edit(msgObj);
+        try {
+            if (userProg.private_message == null) {
+                const customerId = userProg.customer.id;
+                const fetchedUser = await client.users.fetch(customerId, {force: true});
+                const sentMsg = await fetchedUser.send(msgObj);
+                userProg.private_message = sentMsg;
+            } else {
+                await userProg.private_message.edit(msgObj);
+            }
+        } catch (e) {
+            console.log("Cannot send private message to user " + userProg.customer.id);
         }
 
         userProgress.delete(ownerId);

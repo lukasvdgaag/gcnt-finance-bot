@@ -23,15 +23,12 @@ class PaymentMessenger {
 
     async processMessage(msg) {
         if (msg.channelId !== "929499058828103730") {
-            console.log("Not in the right channel");
             return;
         }
         if (msg.webhookId == null) {
-            console.log("Not a webhook");
             return;
         }
         if (msg.embeds.length === 0) {
-            console.log("No embeds");
             return;
         }
 
@@ -114,7 +111,11 @@ class PaymentMessenger {
             }
 
             console.log("sending message");
-            discordUser.send({embeds: [emb], components: []});
+            try {
+                discordUser.send({embeds: [emb], components: []});
+            } catch (e) {
+                console.log("Error sending message to user " + discordUser.user.tag);
+            }
         }
     }
 
