@@ -1,3 +1,4 @@
+require('dotenv').config({path: __dirname + '/.env'});
 const express = require('express');
 const app = express();
 
@@ -13,8 +14,10 @@ class HttpServer {
         this.customPlugins = customPlugins;
 
         app.post('/ticketPricingUpdate/:pricingId/:ticketId', (req, res) => {
-            if (req.header('Auth') !== "JRjd}bt7vL9(=`#_]'qXhn~>[$/NJcg\"D7!`Hcde{PQ4Zkd@(8%r;K+xZmSfCntp") {
+            if (req.header('Auth') !== process.env.TICKET_AUTH) {
                 console.log('Invalid Auth');
+                console.log("Auth provided:  " + req.header("Auth"));
+                console.log("Auth required:  " + process.env.TICKET_AUTH)
                 res.sendStatus(401);
                 return;
             }
@@ -24,8 +27,6 @@ class HttpServer {
 
             const body = req.body;
 
-            console.log("ticketPricingUpdate");
-            console.log(body);
             this.customPlugins.handlePricingUpdate(pricingId, ticketId, body);
             res.sendStatus(200);
         });

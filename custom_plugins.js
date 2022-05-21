@@ -79,7 +79,7 @@ const rates = {
             description: 'Written for one specific version'
         },
         premium: {
-            rate: 4,
+            rate: 5,
             description: 'Ability to run on 1.12- and 1.13+ with one NMS version when required'
         },
         pro: {
@@ -273,10 +273,10 @@ class CustomPlugins {
         return true;
     }
 
-    async revokeAccess(channel) {
-        channel.permissionOverwrites.cache.forEach( (value, user) => {
+    revokeAccess(channel) {
+        channel.permissionOverwrites.cache.forEach( async (value, user) => {
             if (value.type === "member") {
-                channel.permissionOverwrites.edit(user, {
+                channel.permissionOverwrites.edit(await this.client.users.fetch(user, {force: true}), {
                     ADD_REACTIONS: true,
                     ATTACH_FILES: true,
                     READ_MESSAGE_HISTORY: true,
@@ -316,6 +316,7 @@ class CustomPlugins {
     async createCommands() {
         try {
             const cmds = {
+                type: "CHAT_INPUT",
                 name: 'order',
                 description: 'Create a new ticket for ordering a custom plugin.',
                 options: [
@@ -366,10 +367,8 @@ class CustomPlugins {
                 ]
             };
 
-            // const guild = await this.client.guilds.fetch(this.guildId);
-            // guild.commands.create(cmds);
-
             this.client.application.commands.create(cmds);
+
         } catch (e) {
             console.log(e);
         }
@@ -471,7 +470,7 @@ class CustomPlugins {
         const embed = this.getEmbed(`Project Summary`, "Here is a summary of the information that you entered about this project.");
         embed.addField("Server Name", ticketInfo.server_name ?? ":no_entry_sign:  No server name entered", true);
         embed.addField("Deadline", ticketInfo.deadline ?? ":infinity: I have no deadline", true);
-        embed.addField("ProjectDescription", ticketInfo.plugin_description ?? ":no_entry_sign:  No project description entered", true);
+        embed.addField("Project Description", ticketInfo.plugin_description ?? ":no_entry_sign:  No project description entered", false);
         embed.setFooter({text: 'If you have any additional information, please use this channel to communicate with us.'});
 
         const sent = await channel.send({embeds: [embed]});
@@ -570,6 +569,12 @@ class CustomPlugins {
                 parent: this.categoryId,
                 topic: `Custom plugin ticket for ${interaction.user.username}.`
             });
+            created.permissionOverwrites.edit(guild.roles.everyone, {
+                VIEW_CHANNEL: false,
+                SEND_MESSAGES: false,
+                READ_MESSAGE_HISTORY: false
+            });
+
             await this.giveUserPermission(created, interaction.user);
 
             const reply = await interaction.reply({content: `Ticket with channel <#${created.id}> has been created!`, fetchReply: true});
@@ -634,6 +639,7 @@ class CustomPlugins {
     }
 
     async handlePricingUpdate(pricingId, ticketId, body) {
+        console.log(body);
         const currentTicketInfo = this.ticketInfo.get(body.ticket_id);
         if (currentTicketInfo == null) {
             console.log("Ticket not found");
@@ -652,14 +658,20 @@ class CustomPlugins {
         const pricingEmbed = this.getEmbed("Pricing Summary", "Here is a summary of the pricing options that you selected for this project.");
         const typeRate = rates.type[body.type].rate;
         pricingEmbed.addField("Plugin type", `${rates.descriptions[body.type]} - ${typeRate} EUR / hour\n${rates.type[body.type].description}`, true);
+
         const testingRate = rates.testing[body.testing].rate;
-        pricingEmbed.addField("Testing", `${rates.descriptions[body.testing]} - ${testingRate} EUR\n${rates.testing[body.testing].description}`, true);
+        const testingPrice = body.testing === body.type ? "Included" : `${testingRate} EUR`;
+        pricingEmbed.addField("Testing", `${rates.descriptions[body.testing]} - ${testingPrice}\n${rates.testing[body.testing].description}`, true);
+
         const messagesRate = rates.messages[body.messages].rate;
         pricingEmbed.addField("Messages & Items", `${rates.descriptions[body.messages]} - ${messagesRate} EUR\n${rates.messages[body.messages].description}`, true);
+
         const commandsRate = rates.commands[body.commands].rate;
         pricingEmbed.addField("Commands", `${rates.descriptions[body.commands]} - ${commandsRate} EUR\n${rates.commands[body.commands].description}`, true);
+
         const versionsRate = rates.versions[body.versions].rate;
         pricingEmbed.addField("Versions", `${rates.descriptions[body.versions]} - ${versionsRate} EUR\n${rates.versions[body.versions].description}`, true);
+
         if (body.allow_publication) {
             pricingEmbed.addField("Publication", `${rates.allow_publication.rate} EUR\n${rates.allow_publication.description}`, false);
         }

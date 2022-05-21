@@ -46,9 +46,7 @@ async function getAccessToken() {
         // console.log(req.responseText);
         if (req.status === 200) {
             const json = JSON.parse(req.responseText);
-            console.log(json);
             accessToken = json["access_token"];
-            console.log(accessToken);
             const expiresIn = json["expires_in"];
             setTimeout(getAccessToken, expiresIn * 900);
         }
@@ -58,7 +56,6 @@ async function getAccessToken() {
     req.setRequestHeader("Accept", "application/json");
     req.setRequestHeader("Accept-Language", "en_US");
     let value = "Basic " + btoa(`${process.env.PAYPAL_CLIENT}:${process.env.PAYPAL_SECRET}`);
-    console.log(value);
     req.setRequestHeader("Authorization", value)
     req.send("grant_type=client_credentials");
 }
