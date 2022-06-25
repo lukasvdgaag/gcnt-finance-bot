@@ -127,11 +127,34 @@ class CustomPlugins {
         this.client.login(process.env.CLIENT_TOKEN_CUSTOM_PLUGINS); //login bot using token
     }
 
-    getCachedTicketFromChannel(channelId) {
+    async getCachedTicketFromChannel(channelId, isTicketId = false) {
         for (let [key, value] of this.ticketInfo) {
-            if (value.channelId === channelId) {
+            if ((value.channelId === channelId) || (isTicketId && key === channelId)) {
+                if (value.setupStatus !== Status.SUBMITTED) break;
                 return value;
             }
+        }
+
+        const sqlRes = await this.executeSQL(`SELECT * FROM plugin_request_ticket WHERE ${isTicketId ? "id" : "discord_channel_id"} = ?`, [channelId]);
+        if (sqlRes == null || sqlRes.length === 0) return null;
+        else {
+            const ticket = sqlRes[0];
+            const ticketObject = {
+                ticketId: ticket.id,
+                id: ticket.id,
+                requester: ticket.requester,
+                description: ticket.plugin_description,
+                setupStatus: ticket.setup_status,
+                status: ticket.status,
+                createdAt: ticket.created_at,
+                updatedAt: ticket.updated_at,
+                channelId: ticket.discord_channel_id,
+                serverName: ticket.server_name,
+                deadline: ticket.deadline,
+                lastMessageId: ticket.last_discord_message
+            };
+            this.ticketInfo.set(ticket.id, ticketObject);
+            return ticketObject;
         }
     }
 
@@ -140,7 +163,7 @@ class CustomPlugins {
 
         const subcommand = interaction.options.getSubcommand(false);
         switch (subcommand) {
-            case "open":
+            case "create":
                 this.openTicket(interaction);
                 break;
             case "close":
@@ -274,7 +297,7 @@ class CustomPlugins {
     }
 
     revokeAccess(channel) {
-        channel.permissionOverwrites.cache.forEach( async (value, user) => {
+        channel.permissionOverwrites.cache.forEach(async (value, user) => {
             if (value.type === "member") {
                 channel.permissionOverwrites.edit(await this.client.users.fetch(user, {force: true}), {
                     ADD_REACTIONS: true,
@@ -290,6 +313,8 @@ class CustomPlugins {
     async closeTicket(interaction, approve = null) {
         const userRes = await this.executeSQL("SELECT id, role FROM users WHERE discord_id = ?", [interaction.user.id]);
 
+        const ticketId = await this.executeSQL("SELECT id FROM plugin_request_ticket WHERE discord_channel_id = ?", [interaction.channelId]);
+
         if (userRes[0].role !== "admin" || approve == null) {
             const embed = this.getEmbed("Ticket closed!", `<@${interaction.user.id}> has closed the ticket.`, "#f58a42");
             const sent = await interaction.reply({content: "Ticket closed!", fetchReply: true});
@@ -298,6 +323,9 @@ class CustomPlugins {
             this.revokeAccess(interaction.channel);
             await this.executeSQL("UPDATE plugin_request_ticket SET status = ? WHERE discord_channel_id = ?", ['CLOSED', interaction.channelId]);
             interaction.channel.send({embeds: [embed]});
+
+            interaction.channel.setName(`ticket-${ticketId[0].id}-closed`);
+            this.ticketInfo.delete(ticketId[0].id);
             return;
         }
 
@@ -305,7 +333,12 @@ class CustomPlugins {
         if (approve) embed = this.getEmbed("Ticket approved!", `<@${interaction.user.id}> has approved the ticket.`, "#42f566");
         else embed = this.getEmbed("Ticket denied!", `<@${interaction.user.id}> has denied the ticket.`, "#f54257");
 
-        this.revokeAccess(interaction.channel);
+        // revoking access to the channel when an admin denies the ticket.
+        if (!approve) {
+            this.revokeAccess(interaction.channel);
+            interaction.channel.setName(`ticket-${ticketId[0].id}-closed`);
+            this.ticketInfo.delete(ticketId[0].id);
+        }
         await this.executeSQL("UPDATE plugin_request_ticket SET status = ? WHERE discord_channel_id = ?", [approve ? "APPROVED" : "DENIED", interaction.channelId]);
 
         const sent = await interaction.reply({content: `Ticket ${approve ? "approved" : "denied"}!`, fetchReply: true});
@@ -322,7 +355,7 @@ class CustomPlugins {
                 options: [
                     {
                         type: 'SUB_COMMAND',
-                        name: 'open',
+                        name: 'create',
                         description: 'Open a new custom plugin ordering ticket.',
                     },
                     {
@@ -396,17 +429,17 @@ class CustomPlugins {
             return;
         }
 
-        const ticketInfo = this.getCachedTicketFromChannel(message.channel.id);
-        if (ticketInfo == null || ticketInfo.status === Status.SUBMITTED) {
+        const ticketInfo = await this.getCachedTicketFromChannel(message.channel.id);
+        if (ticketInfo == null || ticketInfo.setupStatus === Status.SUBMITTED) {
             return;
         }
 
-        if (ticketInfo.status === Status.BUDGETING) {
+        if (ticketInfo.setupStatus === Status.BUDGETING) {
             message.delete();
             return;
         }
 
-        if (ticketInfo.status === Status.ENTER_SERVER_NAME) {
+        if (ticketInfo.setupStatus === Status.ENTER_SERVER_NAME) {
             message.delete();
             if (message.content.length > 35) {
                 const embed = this.getEmbed("Server name too long", "The server name that you entered is too long. Please enter a server name with less than 35 characters", "#f54257");
@@ -417,9 +450,9 @@ class CustomPlugins {
                 return;
             }
 
+            ticketInfo.setupStatus = Status.ENTER_DEADLINE;
             ticketInfo.serverName = message.content;
-            ticketInfo.status = Status.ENTER_DEADLINE;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content);
+            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content, Status.ENTER_DEADLINE);
 
             const embed = this.getEmbed(`When is the deadline for this product?`, null);
             const interactions = new MessageActionRow().addComponents(
@@ -430,47 +463,55 @@ class CustomPlugins {
                     .setEmoji('♾️')
             );
 
-            const previousMsg = await message.channel.messages.fetch(ticketInfo.serverMessage);
-            if (previousMsg != null) previousMsg.delete();
+            this.deleteLastMessage(ticketInfo, message.channel);
 
-            delete ticketInfo.serverMessage;
-
+            console.log("sending the deadline message");
             const sent = await message.channel.send({embeds: [embed], components: [interactions]});
-            ticketInfo.deadlineMessage = sent.id;
-        } else if (ticketInfo.status === Status.ENTER_DEADLINE) {
+            ticketInfo.lastMessageId = sent.id;
+            console.log("with id: " + sent.id)
+            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id);
+        } else if (ticketInfo.setupStatus === Status.ENTER_DEADLINE) {
             message.delete();
             this.handleDeadlineSetting(message.channel, message.content);
-        } else if (ticketInfo.status === Status.ENTER_PROJECT_DESCRIPTION) {
+        } else if (ticketInfo.setupStatus === Status.ENTER_PROJECT_DESCRIPTION) {
             message.delete();
 
             ticketInfo.description = message.content;
-            ticketInfo.status = Status.SUBMITTED;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'plugin_description', message.content);
+            ticketInfo.setupStatus = Status.SUBMITTED;
+            await this.setTicketSQLValue(ticketInfo.ticketId, 'plugin_description', message.content, Status.SUBMITTED);
 
             await this.sendSummary(message.channel, ticketInfo.ticketId);
 
             const embed = this.getEmbed(`:white_check_mark:  Thanks for answering the questions!`, "We will get back to you as soon as possible.");
 
-            const previousMsg = await message.channel.messages.fetch(ticketInfo.descriptionMessage);
-            if (previousMsg != null) previousMsg.delete();
+            this.deleteLastMessage(ticketInfo, message.channel);
 
-            delete ticketInfo.descriptionMessage;
+            delete ticketInfo.lastMessageId;
+            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', null);
 
             message.channel.send({content: '<@&571717051727609857>', embeds: [embed]});
         }
     }
 
-    async sendSummary(channel, ticketId) {
-        let ticketInfo = await this.executeSQL(`SELECT *
-                                                FROM plugin_request_ticket
-                                                WHERE id = ?`, [ticketId]);
-        if (ticketInfo == null || ticketInfo[0] == null) return;
-        ticketInfo = ticketInfo[0];
+    async deleteLastMessage(ticketInfo, channel) {
+        if (ticketInfo.lastMessageId == null) return;
+
+        try {
+            const previousMsg = await channel.messages.fetch(ticketInfo.lastMessageId);
+            if (previousMsg != null) previousMsg.delete();
+        } catch (e) {
+            console.log(e);
+        }
+    }
+
+    async sendSummary(channel) {
+        let ticketInfo = await this.getCachedTicketFromChannel(channel.id);
+        if (ticketInfo == null) return;
 
         const embed = this.getEmbed(`Project Summary`, "Here is a summary of the information that you entered about this project.");
-        embed.addField("Server Name", ticketInfo.server_name ?? ":no_entry_sign:  No server name entered", true);
+        embed.addField("Server Name", ticketInfo.serverName ?? ":no_entry_sign:  No server name entered", true);
         embed.addField("Deadline", ticketInfo.deadline ?? ":infinity: I have no deadline", true);
-        embed.addField("Project Description", ticketInfo.plugin_description ?? ":no_entry_sign:  No project description entered", false);
+        embed.addField("Project Description", ticketInfo.description ?? ":no_entry_sign:  No project description entered", false);
         embed.setFooter({text: 'If you have any additional information, please use this channel to communicate with us.'});
 
         const sent = await channel.send({embeds: [embed]});
@@ -478,7 +519,7 @@ class CustomPlugins {
     }
 
     async handleDeadlineSetting(channel, value) {
-        const ticketInfo = this.getCachedTicketFromChannel(channel.id);
+        const ticketInfo = await this.getCachedTicketFromChannel(channel.id);
         if (ticketInfo == null) return;
 
         if (value != null && value.length > 256) {
@@ -491,21 +532,27 @@ class CustomPlugins {
         }
 
         ticketInfo.deadline = value;
-        ticketInfo.status = Status.ENTER_PROJECT_DESCRIPTION;
-        if (value != null) this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value);
+        ticketInfo.setupStatus = Status.ENTER_PROJECT_DESCRIPTION;
+        this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value, Status.ENTER_PROJECT_DESCRIPTION);
 
         const embed = this.getEmbed(`Please describe your project in as much detail as possible.`, null);
 
-        const previousMsg = await channel.messages.fetch(ticketInfo.deadlineMessage);
-        if (previousMsg != null) previousMsg.delete();
-
-        delete ticketInfo.deadlineMessage;
+        this.deleteLastMessage(ticketInfo, channel);
 
         const sent = await channel.send({embeds: [embed]});
-        ticketInfo.descriptionMessage = sent.id;
+        ticketInfo.lastMessageId = sent.id;
+        this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id, null);
     }
 
-    setTicketSQLValue(ticketId, key, value) {
+    /**
+     * Change the value of a ticket.
+     * @param ticketId {string} The id of the ticket.
+     * @param key {string} The name of the MySQL table column to alter its value.
+     * @param value The new value of the column.
+     * @param setupStatus {null|string} The current setup status. Set to null to keep the current status.
+     * @returns {Promise<null|array>}
+     */
+    setTicketSQLValue(ticketId, key, value, setupStatus = null) {
         const clas = this;
         return new Promise(async function (ok, fail) {
             const con = clas.#getConnection();
@@ -514,8 +561,14 @@ class CustomPlugins {
                     fail(err);
                     return;
                 }
+
+                let statusPart = "";
+                if (setupStatus != null) {
+                    statusPart = `, setup_status = '${setupStatus}'`
+                }
+
                 con.query(`UPDATE plugin_request_ticket
-                           SET ${key} = ?
+                           SET ${key} = ? ${statusPart}
                            WHERE id = ?`, [value, ticketId],
                     function (err, result, fields) {
                         if (err) {
@@ -541,9 +594,7 @@ class CustomPlugins {
         const guild = interaction.guild;
         try {
             const id = interaction.user.id;
-            console.log(id);
             const userRes = await this.executeSQL("SELECT id FROM users WHERE discord_id = ? AND discord_verified = 1", [id]);
-            console.log(userRes);
             if (userRes == null || userRes.length === 0 || (userRes[0].id ?? null) == null) {
                 const embed = this.getEmbed("No (verified) MyGCNT account found!", "We couldn't find a (verified) MyGCNT account that is linked to this Discord. Please create an account if you do not have one yet with the link below and make sure to verify it in <#645068503275143169> with `/verify mygcnt`.\n https://my.gcnt.net/register ", "#f54257");
                 const sent = await interaction.reply({embeds: [embed], fetchReply: true});
@@ -640,7 +691,7 @@ class CustomPlugins {
 
     async handlePricingUpdate(pricingId, ticketId, body) {
         console.log(body);
-        const currentTicketInfo = this.ticketInfo.get(body.ticket_id);
+        const currentTicketInfo = await this.getCachedTicketFromChannel(body.ticket_id, true);
         if (currentTicketInfo == null) {
             console.log("Ticket not found");
             return;
@@ -652,7 +703,7 @@ class CustomPlugins {
             return;
         }
 
-        const pricingMessage = await channel.messages.fetch(currentTicketInfo.pricingLinkMessage)
+        const pricingMessage = await channel.messages.fetch(currentTicketInfo.lastMessageId);
         if (pricingMessage != null) pricingMessage.delete();
 
         const pricingEmbed = this.getEmbed("Pricing Summary", "Here is a summary of the pricing options that you selected for this project.");
@@ -692,9 +743,9 @@ class CustomPlugins {
 
         sentMsg.pin();
 
-        currentTicketInfo.pricing = body;
-        currentTicketInfo.status = Status.ENTER_SERVER_NAME;
-        currentTicketInfo.serverMessage = sentMsg.id;
+        currentTicketInfo.setupStatus = Status.ENTER_SERVER_NAME;
+        currentTicketInfo.lastMessageId = sentMsg.id;
+        this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, Status.ENTER_SERVER_NAME);
     }
 
     getEmbed(title, description = null, color = process.env.COLOR) {
@@ -711,23 +762,14 @@ class CustomPlugins {
         const ticket = ticketRes.insertId;
         channel.setName(`ticket-${ticket}`);
 
-        const currentTicketInfo = {
-            ticketId: ticket,
-            channelId: channel.id,
-            userId: user.id,
-            status: Status.BUDGETING,
-            gcntId: gcntId
-        };
-        this.ticketInfo.set(ticket.toString(), currentTicketInfo);
+        const currentTicketInfo = await this.getCachedTicketFromChannel(channel.id);
 
         const embed = new MessageEmbed()
             .setTitle("Welcome to your custom plugin ticket!")
             .setDescription(`Hello <@${user.id}>,\n\nWelcome to your custom plugin ticket with id #${ticket}!\nWe will be asking you a couple of questions regarding your request.`)
             .setColor(process.env.COLOR);
 
-        const firstSent = channel.send({content: `<@${user.id}>`, embeds: [embed]});
-        currentTicketInfo.initialMessage = firstSent.id;
-
+        channel.send({content: `<@${user.id}>`, embeds: [embed]});
 
         const firstMsg = new MessageEmbed()
             .setTitle("Pricing")
@@ -737,7 +779,8 @@ class CustomPlugins {
             .setColor(process.env.COLOR);
 
         const sent = await channel.send({embeds: [firstMsg]});
-        currentTicketInfo.pricingLinkMessage = sent.id;
+        currentTicketInfo.lastMessageId = sent.id;
+        this.setTicketSQLValue(ticket, "last_discord_message", sent.id);
     }
 
     async sendFirstMessage() {
