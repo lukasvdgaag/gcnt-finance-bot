@@ -190,7 +190,7 @@ class CustomPlugins {
         }
 
         if (interaction.user.id === user.id) {
-            const embed = this.getEmbed("That's you!", "You can't add yourself to this ticket since you already have access.", "#f54257");
+            const embed = this.getEmbed("That's you!", "You can't add yourself to this order since you already have access.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return;
@@ -198,14 +198,14 @@ class CustomPlugins {
 
         const found = await interaction.channel.permissionOverwrites.cache.find(search => search.id === user.id);
         if (found != null) {
-            const embed = this.getEmbed("User already has access", "That user already has access to this ticket.", "#f54257");
+            const embed = this.getEmbed("User already has access", "That user already has access to this order.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return;
         }
 
         this.giveUserPermission(interaction.channel, user);
-        const embed = this.getEmbed("User added", `<@${user.id}> has been added to this ticket by <@${interaction.user.id}>.`, "#f58a42");
+        const embed = this.getEmbed("User added", `<@${user.id}> has been added to this order by <@${interaction.user.id}>.`, "#f58a42");
 
         const sent = await interaction.reply({"content": "User added!", fetchReply: true});
         setTimeout(() => sent.delete(), 5000);
@@ -222,14 +222,14 @@ class CustomPlugins {
         }
 
         if (interaction.user.id === user.id) {
-            const embed = this.getEmbed("That's you!", "You can't remove yourself from this ticket since you opened it. If you wish to close this ticket, please use `/order close`.", "#f54257");
+            const embed = this.getEmbed("That's you!", "You can't remove yourself from this order since you opened it. If you wish to close this order, please use `/order close`.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return;
         }
 
         if (user.bot) {
-            const embed = this.getEmbed("That's a bot!", "You can't remove bots from this ticket.", "#f54257");
+            const embed = this.getEmbed("That's a bot!", "You can't remove bots from this order.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return;
@@ -237,7 +237,7 @@ class CustomPlugins {
 
         const member = await interaction.guild.members.fetch(user.id);
         if (member.roles.cache.some(role => role.id === '571717051727609857')) {
-            const embed = this.getEmbed("That's a staff member!", "You can't remove staff members from this ticket.", "#f54257");
+            const embed = this.getEmbed("That's a staff member!", "You can't remove staff members from this order.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return;
@@ -245,7 +245,7 @@ class CustomPlugins {
 
         const found = await interaction.channel.permissionOverwrites.cache.find(search => search.id === user.id);
         if (found == null) {
-            const embed = this.getEmbed("User has no access", "That user does not have access to this ticket.", "#f54257");
+            const embed = this.getEmbed("User has no access", "That user does not have access to this order.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return;
@@ -253,7 +253,7 @@ class CustomPlugins {
 
         interaction.channel.permissionOverwrites.delete(user.id);
 
-        const embed = this.getEmbed("User removed", `<@${user.id}> has been removed from this ticket by <@${interaction.user.id}>.`, "#f58a42");
+        const embed = this.getEmbed("User removed", `<@${user.id}> has been removed from this order by <@${interaction.user.id}>.`, "#f58a42");
 
         const sent = await interaction.reply({"content": "User removed!", fetchReply: true});
         setTimeout(() => sent.delete(), 5000);
@@ -263,7 +263,7 @@ class CustomPlugins {
 
     async checkForChannelId(interaction) {
         if (interaction.channelId == null) {
-            const embed = this.getEmbed("Please execute this command in a channel!", "This command has to be executed in a ticket channel.", "#f54257");
+            const embed = this.getEmbed("Please execute this command in a channel!", "This command has to be executed in an order channel.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return false;
@@ -271,7 +271,7 @@ class CustomPlugins {
 
         const userRes = await this.executeSQL("SELECT id, role FROM users WHERE discord_id = ?", [interaction.user.id]);
         if (userRes == null || userRes.length === 0 || (userRes[0].id ?? null) == null) {
-            const embed = this.getEmbed("No permission!", "You are not allowed to execute this action on this ticket.", "#f54257");
+            const embed = this.getEmbed("No permission!", "You are not allowed to execute this action on this order.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return false;
@@ -279,15 +279,15 @@ class CustomPlugins {
 
         const found = await this.executeSQL("SELECT * FROM plugin_request_ticket WHERE discord_channel_id = ?", interaction.channelId);
         if (found == null || found.length === 0) {
-            const embed = this.getEmbed("No ticket found!", "There is no ticket associated with the channel that you are executing this command from. " +
-                "Please execute this command from the channel that is linked to the ticket that you're trying to execute an action on.", "#f54257");
+            const embed = this.getEmbed("No order found!", "There is no order associated with the channel that you are executing this command from. " +
+                "Please execute this command from the channel that is linked to the order that you're trying to execute an action on.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 8000);
             return false;
         }
 
         if (userRes[0].role !== "admin" && found[0].requester !== userRes[0].id) {
-            const embed = this.getEmbed("No permission!", "You are not allowed to execute this action on this ticket.", "#f54257");
+            const embed = this.getEmbed("No permission!", "You are not allowed to execute this action on this order.", "#f54257");
             const sent = await interaction.reply({embeds: [embed], fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
             return false;
@@ -316,32 +316,32 @@ class CustomPlugins {
         const ticketId = await this.executeSQL("SELECT id FROM plugin_request_ticket WHERE discord_channel_id = ?", [interaction.channelId]);
 
         if (userRes[0].role !== "admin" || approve == null) {
-            const embed = this.getEmbed("Ticket closed!", `<@${interaction.user.id}> has closed the ticket.`, "#f58a42");
-            const sent = await interaction.reply({content: "Ticket closed!", fetchReply: true});
+            const embed = this.getEmbed("order closed!", `<@${interaction.user.id}> has closed the order.`, "#f58a42");
+            const sent = await interaction.reply({content: "order closed!", fetchReply: true});
             setTimeout(() => sent.delete(), 5000);
 
             this.revokeAccess(interaction.channel);
             await this.executeSQL("UPDATE plugin_request_ticket SET status = ? WHERE discord_channel_id = ?", ['CLOSED', interaction.channelId]);
             interaction.channel.send({embeds: [embed]});
 
-            interaction.channel.setName(`ticket-${ticketId[0].id}-closed`);
+            interaction.channel.setName(`order-${ticketId[0].id}-closed`);
             this.ticketInfo.delete(ticketId[0].id);
             return;
         }
 
         let embed;
-        if (approve) embed = this.getEmbed("Ticket approved!", `<@${interaction.user.id}> has approved the ticket.`, "#42f566");
-        else embed = this.getEmbed("Ticket denied!", `<@${interaction.user.id}> has denied the ticket.`, "#f54257");
+        if (approve) embed = this.getEmbed("order approved!", `<@${interaction.user.id}> has approved the order.`, "#42f566");
+        else embed = this.getEmbed("order denied!", `<@${interaction.user.id}> has denied the order.`, "#f54257");
 
         // revoking access to the channel when an admin denies the ticket.
         if (!approve) {
             this.revokeAccess(interaction.channel);
-            interaction.channel.setName(`ticket-${ticketId[0].id}-closed`);
+            interaction.channel.setName(`order-${orderId[0].id}-closed`);
             this.ticketInfo.delete(ticketId[0].id);
         }
         await this.executeSQL("UPDATE plugin_request_ticket SET status = ? WHERE discord_channel_id = ?", [approve ? "APPROVED" : "DENIED", interaction.channelId]);
 
-        const sent = await interaction.reply({content: `Ticket ${approve ? "approved" : "denied"}!`, fetchReply: true});
+        const sent = await interaction.reply({content: `order ${approve ? "approved" : "denied"}!`, fetchReply: true});
         setTimeout(() => sent.delete(), 5000);
         interaction.channel.send({embeds: [embed]});
     }
@@ -351,17 +351,17 @@ class CustomPlugins {
             const cmds = {
                 type: "CHAT_INPUT",
                 name: 'order',
-                description: 'Create a new ticket for ordering a custom plugin.',
+                description: 'Create a new order for ordering a custom plugin.',
                 options: [
                     {
                         type: 'SUB_COMMAND',
                         name: 'create',
-                        description: 'Open a new custom plugin ordering ticket.',
+                        description: 'Open a new custom plugin ordering order.',
                     },
                     {
                         type: 'SUB_COMMAND',
                         name: 'close',
-                        description: 'Close the current custom plugin ordering ticket.',
+                        description: 'Close the current custom plugin ordering order.',
                         options: [
                             {
                                 type: 'BOOLEAN',
@@ -374,12 +374,12 @@ class CustomPlugins {
                     {
                         type: 'SUB_COMMAND',
                         name: 'adduser',
-                        description: 'Add another user to the current custom plugin ordering ticket.',
+                        description: 'Add another user to the current custom plugin ordering order.',
                         options: [
                             {
                                 type: 'USER',
                                 name: 'user',
-                                description: 'The user to add to the ticket.',
+                                description: 'The user to add to the order.',
                                 required: true,
                             }
                         ]
@@ -387,12 +387,12 @@ class CustomPlugins {
                     {
                         type: 'SUB_COMMAND',
                         name: 'removeuser',
-                        description: 'Remove a user from the current custom plugin ordering ticket.',
+                        description: 'Remove a user from the current custom plugin ordering order.',
                         options: [
                             {
                                 type: 'USER',
                                 name: 'user',
-                                description: 'The user to remove from the ticket.',
+                                description: 'The user to remove from the order.',
                                 required: true,
                             }
                         ]
@@ -417,6 +417,10 @@ class CustomPlugins {
         }, {type: 1, reason: 'Give user permission to access channel'});
     }
 
+    isAdmin(user) {
+        return user.roles.cache.some(role => role.id === "571717051727609857" || role.id === "740907945252094005");
+    }
+
     async handleChatMessage(message) {
         if ((message.channel.parentId === this.categoryId && message.type === "CHANNEL_PINNED_MESSAGE") ||
             (message.channel.id === this.orderFromUsChannelId && !message.author.bot)) {
@@ -435,7 +439,9 @@ class CustomPlugins {
         }
 
         if (ticketInfo.setupStatus === Status.BUDGETING) {
-            message.delete();
+            if (!this.isAdmin(message.member)) {
+                message.delete();
+            }
             return;
         }
 
