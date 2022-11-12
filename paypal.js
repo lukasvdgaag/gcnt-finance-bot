@@ -26,7 +26,7 @@ async function getPayPalUserInfo(userDiscord) {
                               p.business
                        FROM users AS u
                                 LEFT JOIN user_paypal p ON u.id = p.user
-                       WHERE u.discord = ?
+                       WHERE u.discord_id = ?
                          AND u.discord_verified = 1
                        LIMIT 1;`, [userDiscord],
                 function (err, result, fields) {

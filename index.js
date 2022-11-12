@@ -82,7 +82,7 @@ client.on('messageCreate', async (msg) => {
             sendErrorMessage(msg.channel, "No user found!", "We couldn't find a user in this Discord with the entered username. Please enter the username of the user that you want to create the invoice for.")
                 .then(r => userProg.last_error_msg = r);
         } else {
-            userProg.customer_info = await getPayPalUserInfo(member.user.tag);
+            userProg.customer_info = await getPayPalUserInfo(member.user.id);
             if (userProg.customer_info == null) {
                 sendErrorMessage(msg.channel, "No MyGCNT User Found!", "We failed to find a MyGCNT user with that Discord name, or their account is not discord-verified. Please make sure this the entered Discord name is linked to a verified MyGCNT account.")
                     .then(r => userProg.last_error_msg = r);
