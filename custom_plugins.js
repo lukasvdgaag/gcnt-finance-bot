@@ -1,6 +1,17 @@
-const Discord = require("discord.js");
-const dotenv = require("dotenv");
-const {MessageEmbed, MessageButton, MessageActionRow} = require("discord.js");
+require("dotenv").config({path: __dirname + '/.env'});
+
+const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    Client,
+    CommandInteraction,
+    EmbedBuilder,
+    GuildMember,
+    Message,
+    TextChannel,
+    User,
+    GatewayIntentBits,
+} = require("discord.js");
 const mysql = require('mysql');
 
 const Status = {
@@ -10,7 +21,6 @@ const Status = {
     ENTER_PROJECT_DESCRIPTION: 'ENTER_PLUGIN_DESCRIPTION',
     SUBMITTED: 'SUBMITTED',
 }
-
 const rates = {
     descriptions: {
         budget: '**:green_circle: Budget**',
@@ -95,14 +105,15 @@ const rates = {
 }
 
 class CustomPlugins {
-    client = new Discord.Client({intents: ["GUILDS", "GUILD_MESSAGES", "GUILD_MEMBERS", "GUILD_MESSAGE_REACTIONS"]}); //create new client
+
+    client; //create new client
     orderFromUsChannelId = '965377410335924295';
     guildId = '536178805828485140';
     categoryId = '965377119423197184';
     ticketInfo = new Map();
 
     constructor() {
-        dotenv.config({path: __dirname + '/.env'});
+        this.client = new Client({intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessageReactions]});
 
         this.client.on('ready', () => {
             console.log(`Logged in as ${this.client.user.tag}!`);
@@ -135,7 +146,9 @@ class CustomPlugins {
             }
         }
 
-        const sqlRes = await this.executeSQL(`SELECT * FROM plugin_request_ticket WHERE ${isTicketId ? "id" : "discord_channel_id"} = ?`, [channelId]);
+        const sqlRes = await this.executeSQL(`SELECT *
+                                              FROM plugin_request_ticket
+                                              WHERE ${isTicketId ? "id" : "discord_channel_id"} = ?`, [channelId]);
         if (sqlRes == null || sqlRes.length === 0) return null;
         else {
             const ticket = sqlRes[0];
@@ -158,10 +171,14 @@ class CustomPlugins {
         }
     }
 
+    /**
+     * @param {CommandInteraction} interaction
+     * @returns {Promise<void>}
+     */
     async handleCommand(interaction) {
         if (interaction.commandName !== "order") return;
 
-        const subcommand = interaction.options.getSubcommand(false);
+        const subcommand = interaction.options.getSubcomand(false);
         switch (subcommand) {
             case "create":
                 this.openTicket(interaction);
@@ -181,6 +198,10 @@ class CustomPlugins {
         }
     }
 
+    /**
+     * @param {CommandInteraction} interaction
+     * @param {User} user     * @returns {Promise<void>}
+     */
     async addUserToTicket(interaction, user) {
         if (user == null) {
             const embed = this.getEmbed("User not found", "Please enter a valid user", "#f54257");
@@ -204,7 +225,7 @@ class CustomPlugins {
             return;
         }
 
-        this.giveUserPermission(interaction.channel, user);
+        this.giveUserPermission(interaction.channel, user).catch();
         const embed = this.getEmbed("User added", `<@${user.id}> has been added to this order by <@${interaction.user.id}>.`, "#f58a42");
 
         const sent = await interaction.reply({"content": "User added!", fetchReply: true});
@@ -213,6 +234,11 @@ class CustomPlugins {
         await interaction.channel.send({embeds: [embed]});
     }
 
+    /**
+     * @param {CommandInteraction} interaction
+     * @param {User} user
+     * @returns {Promise<void>}
+     */
     async removeUserFromTicket(interaction, user) {
         if (user == null) {
             const embed = this.getEmbed("User not found", "Please enter a valid user", "#f54257");
@@ -261,6 +287,10 @@ class CustomPlugins {
         await interaction.channel.send({embeds: [embed]});
     }
 
+    /**
+     * @param {CommandInteraction} interaction
+     * @returns {Promise<boolean>}
+     */
     async checkForChannelId(interaction) {
         if (interaction.channelId == null) {
             const embed = this.getEmbed("Please execute this command in a channel!", "This command has to be executed in an order channel.", "#f54257");
@@ -296,6 +326,9 @@ class CustomPlugins {
         return true;
     }
 
+    /**
+     * @param {TextChannel} channel
+     */
     revokeAccess(channel) {
         channel.permissionOverwrites.cache.forEach(async (value, user) => {
             if (value.type === "member") {
@@ -310,6 +343,11 @@ class CustomPlugins {
         });
     }
 
+    /**
+     * @param {CommandInteraction}} interaction
+     * @param {boolean|null} approve
+     * @returns {Promise<void>}
+     */
     async closeTicket(interaction, approve = null) {
         const userRes = await this.executeSQL("SELECT id, role FROM users WHERE discord_id = ?", [interaction.user.id]);
 
@@ -347,66 +385,67 @@ class CustomPlugins {
     }
 
     async createCommands() {
-        try {
-            const cmds = {
-                type: "CHAT_INPUT",
-                name: 'order',
-                description: 'Create a new order for ordering a custom plugin.',
-                options: [
-                    {
-                        type: 'SUB_COMMAND',
-                        name: 'create',
-                        description: 'Open a new custom plugin ordering order.',
-                    },
-                    {
-                        type: 'SUB_COMMAND',
-                        name: 'close',
-                        description: 'Close the current custom plugin ordering order.',
-                        options: [
-                            {
-                                type: 'BOOLEAN',
-                                name: 'approve',
-                                description: 'Whether to approve the request (Admins) .',
-                                required: false,
-                            }
-                        ]
-                    },
-                    {
-                        type: 'SUB_COMMAND',
-                        name: 'adduser',
-                        description: 'Add another user to the current custom plugin ordering order.',
-                        options: [
-                            {
-                                type: 'USER',
-                                name: 'user',
-                                description: 'The user to add to the order.',
-                                required: true,
-                            }
-                        ]
-                    },
-                    {
-                        type: 'SUB_COMMAND',
-                        name: 'removeuser',
-                        description: 'Remove a user from the current custom plugin ordering order.',
-                        options: [
-                            {
-                                type: 'USER',
-                                name: 'user',
-                                description: 'The user to remove from the order.',
-                                required: true,
-                            }
-                        ]
-                    },
-                ]
-            };
+        const cmds = {
+            type: 1,
+            name: 'order',
+            description: 'Create a new order for ordering a custom plugin.',
+            options: [
+                {
+                    type: 1,
+                    name: 'create',
+                    description: 'Open a new custom plugin ordering order.',
+                },
+                {
+                    type: 1,
+                    name: 'close',
+                    description: 'Close the current custom plugin ordering order.',
+                    options: [
+                        {
+                            type: 5,
+                            name: 'approve',
+                            description: 'Whether to approve the request (Admins) .',
+                            required: false,
+                        }
+                    ]
+                },
+                {
+                    type: 1,
+                    name: 'adduser',
+                    description: 'Add another user to the current custom plugin ordering order.',
+                    options: [
+                        {
+                            type: 6,
+                            name: 'user',
+                            description: 'The user to add to the order.',
+                            required: true,
+                        }
+                    ]
+                },
+                {
+                    type: 1,
+                    name: 'removeuser',
+                    description: 'Remove a user from the current custom plugin ordering order.',
+                    options: [
+                        {
+                            type: 6,
+                            name: 'user',
+                            description: 'The user to remove from the order.',
+                            required: true,
+                        }
+                    ]
+                },
+            ]
+        };
 
-            this.client.application.commands.create(cmds);
-
-        } catch (e) {
-            console.log(e);
-        }
+        this.client.application.commands.create(cmds)
+            .catch(console.log);
     }
 
+    /**
+     * @param {TextChannel} channel
+     * @param {User} user
+     * @returns {Promise<void>}
+     */
     async giveUserPermission(channel, user) {
         await channel.permissionOverwrites.create(user, {
             ADD_REACTIONS: true,
@@ -417,14 +456,22 @@ class CustomPlugins {
         }, {type: 1, reason: 'Give user permission to access channel'});
     }
 
+    /**
+     * @param {GuildMember} user
+     * @returns {*}
+     */
     isAdmin(user) {
         return user.roles.cache.some(role => role.id === "571717051727609857" || role.id === "740907945252094005");
     }
 
+    /**
+     * @param {Message} message
+     * @returns {Promise<void>}
+     */
     async handleChatMessage(message) {
         if ((message.channel.parentId === this.categoryId && message.type === "CHANNEL_PINNED_MESSAGE") ||
             (message.channel.id === this.orderFromUsChannelId && !message.author.bot)) {
-            message.delete();
+            message.delete().catch();
             return;
         }
         if (message.author.bot) return;
@@ -440,13 +487,13 @@ class CustomPlugins {
 
         if (ticketInfo.setupStatus === Status.BUDGETING) {
             if (!this.isAdmin(message.member)) {
-                message.delete();
+                message.delete().catch();
             }
             return;
         }
 
         if (ticketInfo.setupStatus === Status.ENTER_SERVER_NAME) {
-            message.delete();
+            message.delete().catch();
             if (message.content.length > 35) {
                 const embed = this.getEmbed("Server name too long", "The server name that you entered is too long. Please enter a server name with less than 35 characters", "#f54257");
                 const sent = await message.channel.send({embeds: [embed]});
@@ -458,29 +505,27 @@ class CustomPlugins {
 
             ticketInfo.setupStatus = Status.ENTER_DEADLINE;
             ticketInfo.serverName = message.content;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content, Status.ENTER_DEADLINE);
+            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content, Status.ENTER_DEADLINE).catch();
 
             const embed = this.getEmbed(`When is the deadline for this product?`, null);
             const interactions = new MessageActionRow().addComponents(
-                new MessageButton()
+                new ButtonBuilder()
                     .setCustomId('no-deadline')
                     .setStyle('PRIMARY')
                     .setLabel('I have no deadline')
                     .setEmoji('♾️')
             );
 
-            this.deleteLastMessage(ticketInfo, message.channel);
+            this.deleteLastMessage(ticketInfo, message.channel).catch();
 
-            console.log("sending the deadline message");
             const sent = await message.channel.send({embeds: [embed], components: [interactions]});
             ticketInfo.lastMessageId = sent.id;
-            console.log("with id: " + sent.id)
-            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id);
+            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id).catch();
         } else if (ticketInfo.setupStatus === Status.ENTER_DEADLINE) {
-            message.delete();
-            this.handleDeadlineSetting(message.channel, message.content);
+            message.delete().catch();
+            this.handleDeadlineSetting(message.channel, message.content).catch();
         } else if (ticketInfo.setupStatus === Status.ENTER_PROJECT_DESCRIPTION) {
-            message.delete();
+            message.delete().catch();
 
             ticketInfo.description = message.content;
             ticketInfo.setupStatus = Status.SUBMITTED;
@@ -490,10 +535,10 @@ class CustomPlugins {
 
             const embed = this.getEmbed(`:white_check_mark:  Thanks for answering the questions!`, "We will get back to you as soon as possible.");
 
-            this.deleteLastMessage(ticketInfo, message.channel);
+            this.deleteLastMessage(ticketInfo, message.channel).catch();
 
             delete ticketInfo.lastMessageId;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', null);
+            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', null).catch();
 
             message.channel.send({content: '<@&571717051727609857>', embeds: [embed]});
         }
@@ -504,7 +549,7 @@ class CustomPlugins {
 
         try {
             const previousMsg = await channel.messages.fetch(ticketInfo.lastMessageId);
-            if (previousMsg != null) previousMsg.delete();
+            previousMsg?.delete().catch();
         } catch (e) {
             console.log(e);
         }
@@ -515,13 +560,15 @@ class CustomPlugins {
         if (ticketInfo == null) return;
 
         const embed = this.getEmbed(`Project Summary`, "Here is a summary of the information that you entered about this project.");
-        embed.addField("Server Name", ticketInfo.serverName ?? ":no_entry_sign:  No server name entered", true);
-        embed.addField("Deadline", ticketInfo.deadline ?? ":infinity: I have no deadline", true);
-        embed.addField("Project Description", ticketInfo.description ?? ":no_entry_sign:  No project description entered", false);
+        embed.addFields(
+            {name: "Server Name", value: ticketInfo.serverName ?? ":no_entry_sign:  No server name entered", inline: true},
+            {name: "Deadline", value: ticketInfo.deadline ?? ":infinity: I have no deadline", inline: true},
+            {name: "Project Description", value: ticketInfo.description ?? ":no_entry_sign:  No project description entered", inline: false}
+        );
         embed.setFooter({text: 'If you have any additional information, please use this channel to communicate with us.'});
 
         const sent = await channel.send({embeds: [embed]});
-        sent.pin();
+        sent.pin().catch();
     }
 
     async handleDeadlineSetting(channel, value) {
@@ -531,23 +578,21 @@ class CustomPlugins {
         if (value != null && value.length > 256) {
             const embed = this.getEmbed("Deadline is too long", "The deadline that you entered is too long. Please enter a deadline that is less than 256 characters.");
             const sent = await channel.send({embeds: [embed]});
-            setTimeout(() => {
-                sent.delete();
-            }, 5000);
+            setTimeout(sent.delete(), 5000);
             return;
         }
 
         ticketInfo.deadline = value;
         ticketInfo.setupStatus = Status.ENTER_PROJECT_DESCRIPTION;
-        this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value, Status.ENTER_PROJECT_DESCRIPTION);
+        this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value, Status.ENTER_PROJECT_DESCRIPTION).catch();
 
         const embed = this.getEmbed(`Please describe your project in as much detail as possible.`, null);
 
-        this.deleteLastMessage(ticketInfo, channel);
+        this.deleteLastMessage(ticketInfo, channel).catch();
 
         const sent = await channel.send({embeds: [embed]});
         ticketInfo.lastMessageId = sent.id;
-        this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id, null);
+        this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id, null).catch();
     }
 
     /**
@@ -638,7 +683,7 @@ class CustomPlugins {
             setTimeout(() => {
                 reply.delete();
             }, 5000);
-            this.sendFirstTicketMessage(await created.fetch(true), interaction.user, userRes[0].id);
+            this.sendFirstTicketMessage(await created.fetch(true), interaction.user, userRes[0].id).catch();
         } catch (e) {
             console.error(e);
             interaction.channel.send("Something went wrong. Please try again later.");
@@ -696,7 +741,6 @@ class CustomPlugins {
     }
 
     async handlePricingUpdate(pricingId, ticketId, body) {
-        console.log(body);
         const currentTicketInfo = await this.getCachedTicketFromChannel(body.ticket_id, true);
         if (currentTicketInfo == null) {
             console.log("Ticket not found");
@@ -714,23 +758,43 @@ class CustomPlugins {
 
         const pricingEmbed = this.getEmbed("Pricing Summary", "Here is a summary of the pricing options that you selected for this project.");
         const typeRate = rates.type[body.type].rate;
-        pricingEmbed.addField("Plugin type", `${rates.descriptions[body.type]} - ${typeRate} EUR / hour\n${rates.type[body.type].description}`, true);
+        pricingEmbed.addFields({
+            name: "Plugin type",
+            value: `${rates.descriptions[body.type]} - ${typeRate} EUR / hour\n${rates.type[body.type].description}`,
+            inline: true
+        });
 
         const testingRate = rates.testing[body.testing].rate;
         const testingPrice = body.testing === body.type ? "Included" : `${testingRate} EUR`;
-        pricingEmbed.addField("Testing", `${rates.descriptions[body.testing]} - ${testingPrice}\n${rates.testing[body.testing].description}`, true);
+        pricingEmbed.addFields({
+            name: "Testing",
+            value: `${rates.descriptions[body.testing]} - ${testingPrice}\n${rates.testing[body.testing].description}`,
+            inline: true
+        });
 
         const messagesRate = rates.messages[body.messages].rate;
-        pricingEmbed.addField("Messages & Items", `${rates.descriptions[body.messages]} - ${messagesRate} EUR\n${rates.messages[body.messages].description}`, true);
+        pricingEmbed.addFields({
+            name: "Messages & Items",
+            value: `${rates.descriptions[body.messages]} - ${messagesRate} EUR\n${rates.messages[body.messages].description}`,
+            inline: true
+        });
 
         const commandsRate = rates.commands[body.commands].rate;
-        pricingEmbed.addField("Commands", `${rates.descriptions[body.commands]} - ${commandsRate} EUR\n${rates.commands[body.commands].description}`, true);
+        pricingEmbed.addFields({
+            name: "Commands",
+            value: `${rates.descriptions[body.commands]} - ${commandsRate} EUR\n${rates.commands[body.commands].description}`,
+            inline: true
+        });
 
         const versionsRate = rates.versions[body.versions].rate;
-        pricingEmbed.addField("Versions", `${rates.descriptions[body.versions]} - ${versionsRate} EUR\n${rates.versions[body.versions].description}`, true);
+        pricingEmbed.addFields({
+            name: "Versions",
+            value: `${rates.descriptions[body.versions]} - ${versionsRate} EUR\n${rates.versions[body.versions].description}`,
+            inline: true
+        });
 
         if (body.allow_publication) {
-            pricingEmbed.addField("Publication", `${rates.allow_publication.rate} EUR\n${rates.allow_publication.description}`, false);
+            pricingEmbed.addFields({name: "Publication", value: `${rates.allow_publication.rate} EUR\n${rates.allow_publication.description}`});
         }
 
         let total = testingRate + messagesRate + commandsRate + versionsRate + (body.allow_publication ? rates.allow_publication.rate : 0);
@@ -739,7 +803,7 @@ class CustomPlugins {
 
         const totalMsg = total === 0 ? "" : (total > 0 ? `+ ${total} EUR` : `- ${(total * -1)} EUR`)
 
-        pricingEmbed.addField("Total", `${typeRate} EUR / hour ${totalMsg}`, false);
+        pricingEmbed.addFields({name: "Total", value: `${typeRate} EUR / hour ${totalMsg}`});
         pricingEmbed.setFooter({text: 'This pricing is final and cannot be changed.'});
 
         channel.send({embeds: [pricingEmbed]});
@@ -747,46 +811,52 @@ class CustomPlugins {
         const embed = this.getEmbed("What is the name of your server?", null);
         const sentMsg = await channel.send({embeds: [embed]});
 
-        sentMsg.pin();
+        sentMsg.pin().catch();
 
         currentTicketInfo.setupStatus = Status.ENTER_SERVER_NAME;
         currentTicketInfo.lastMessageId = sentMsg.id;
-        this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, Status.ENTER_SERVER_NAME);
+        this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, Status.ENTER_SERVER_NAME).catch();
     }
 
     getEmbed(title, description = null, color = process.env.COLOR) {
-        const embed = new MessageEmbed()
+        const embed = new EmbedBuilder()
             .setTitle(title)
             .setColor(color);
         if (description != null) embed.setDescription(description);
         return embed;
     }
 
+    /**
+     * @param {TextChannel} channel
+     * @param {GuildMember} user
+     * @param gcntId
+     * @returns {Promise<void>}
+     */
     async sendFirstTicketMessage(channel, user, gcntId) {
         const ticketRes = await this.createTicket(channel, gcntId);
 
         const ticket = ticketRes.insertId;
-        channel.setName(`ticket-${ticket}`);
+        await channel.setName(`ticket-${ticket}`);
 
         const currentTicketInfo = await this.getCachedTicketFromChannel(channel.id);
 
-        const embed = new MessageEmbed()
-            .setTitle("Welcome to your custom plugin ticket!")
-            .setDescription(`Hello <@${user.id}>,\n\nWelcome to your custom plugin ticket with id #${ticket}!\nWe will be asking you a couple of questions regarding your request.`)
-            .setColor(process.env.COLOR);
+        const embed = this.getEmbed(
+            "Welcome to your custom plugin ticket!",
+            `Hello <@${user.id}>,\n\nWelcome to your custom plugin ticket with id #${ticket}!\nWe will be asking you a couple of questions regarding your request.`
+        );
 
-        channel.send({content: `<@${user.id}>`, embeds: [embed]});
+        await channel.send({content: `<@${user.id}>`, embeds: [embed]});
 
-        const firstMsg = new MessageEmbed()
-            .setTitle("Pricing")
-            .setDescription("We have created a custom link for this ticket so you can easily select your pricing budgets per category. " +
-                "Please select your pricing on the given link and click 'Submit' at the bottom of the page when you are done.\n\n" +
-                await this.createPricingLink(ticket))
-            .setColor(process.env.COLOR);
+        const firstMsg = this.getEmbed(
+            "Pricing",
+            "We have created a custom link for this ticket so you can easily select your pricing budgets per category. " +
+            "Please select your pricing on the given link and click 'Submit' at the bottom of the page when you are done.\n\n" +
+            await this.createPricingLink(ticket)
+        );
 
         const sent = await channel.send({embeds: [firstMsg]});
         currentTicketInfo.lastMessageId = sent.id;
-        this.setTicketSQLValue(ticket, "last_discord_message", sent.id);
+        this.setTicketSQLValue(ticket, "last_discord_message", sent.id).catch();
     }
 
     async sendFirstMessage() {
@@ -795,14 +865,14 @@ class CustomPlugins {
         const pinnedMessages = await channel.messages.fetchPinned(false);
         if (pinnedMessages.size !== 0) return;
 
-        const embed = new MessageEmbed()
-            .setColor(process.env.COLOR)
-            .setTitle("Let's make your Minecraft dream come true!")
-            .setDescription("**Click the button below to get started!**\nWe will create you a personal ticket channel that we will use to discuss the project with you.");
+        const embed = this.getEmbed(
+            "Let's make your Minecraft dream come true!",
+            "**Click the button below to get started!**\nWe will create you a personal ticket channel that we will use to discuss the project with you."
+        );
 
-        const actionRow = new MessageActionRow()
+        const actionRow = new ActionRowBuilder()
             .addComponents(
-                new MessageButton()
+                new ButtonBuilder()
                     .setEmoji('🎟️')
                     .setLabel('Open a ticket!')
                     .setStyle('PRIMARY')
@@ -810,12 +880,8 @@ class CustomPlugins {
             );
 
         const sent = await channel.send({embeds: [embed], components: [actionRow]});
-        sent.pin();
-
+        sent.pin().catch();
     }
-
 }
 
-
-module
-    .exports = CustomPlugins;
+module.exports = CustomPlugins;

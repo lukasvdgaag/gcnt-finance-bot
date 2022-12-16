@@ -9,6 +9,11 @@ let accessToken = "";
 
 async function getPayPalUserInfo(userDiscord) {
     return new Promise(async function (ok, fail) {
+        if (userDiscord == null) {
+            ok(null);
+            return;
+        }
+
         const con = mysql.createConnection({
             host: process.env.MYSQL_HOST,
             user: process.env.MYSQL_USER,
@@ -206,8 +211,8 @@ function getTotal(items) {
 
 /**
  *
- * @param item
- * @returns {{name, value: string}}
+ * @param {any} item
+ * @returns {{name: string, value: string}}
  */
 function getItemField(item) {
     let price;
