@@ -1,5 +1,14 @@
-// import Discord, {MessageActionRow, MessageAttachment, MessageButton, MessageEmbed, MessageSelectMenu} from 'discord.js';
-const {createDraft, getAccessToken, getItemField, getPayPalUserInfo, getQRCode, getTotal, round, sendInvoice, sendRequest} = require("./paypal.js");
+const {
+    createDraft,
+    getAccessToken,
+    getItemField,
+    getPayPalUserInfo,
+    getQRCode,
+    getTotal,
+    round,
+    sendInvoice,
+    sendRequest
+} = require("./paypal.js");
 const PaymentMessenger = require('./payment_messenger.js');
 const {
     ActionRowBuilder,
@@ -14,7 +23,8 @@ const {
     TextChannel,
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
-    GatewayIntentBits
+    GatewayIntentBits, ModalBuilder, TextInputBuilder, BaseSelectMenuBuilder, StringSelectMenuBuilder,
+    StringSelectMenuOptionBuilder
 } = require("discord.js");
 
 const InvoiceActionType = {
@@ -67,6 +77,23 @@ class InvoicingBot {
      */
     async handleMessageCreation(msg) {
         this.paymentMessenger.processMessage(msg);
+
+        if (msg.author.id == "376370161068015618") {
+            console.log("LOL")
+            msg.channel.send({
+                components: [
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('item-enter-name')
+                            .setRequired(true)
+                            .setStyle(1)
+                            .setLabel('Item Name')
+                            .setPlaceholder('Name of the item')
+                    )
+                ]
+            });
+            return;
+        }
 
         if (!msg.author.bot) return;
 
@@ -168,17 +195,24 @@ class InvoicingBot {
      * @param userProg
      */
     async handleCustomerSelectInteraction(interaction, userProg) {
-        userProg.customer_info = await getPayPalUserInfo(interaction.users[0]?.id);
+        console.log(interaction.users);
+
+        const customer = interaction.users.at(0);
+        userProg.customer_info = await getPayPalUserInfo(customer?.id);
         if (userProg.customer_info == null) {
-            this.sendErrorMessage(interaction.channel, "No MyGCNT User Found!", "We failed to find a MyGCNT account connect to the selected user or their account is not discord-verified. Please make sure this the user is linked to a verified MyGCNT account.")
-                .then(r => userProg.last_error_msg = r);
+            this.sendErrorMessage(
+                interaction.channel,
+                "No MyGCNT User Found!",
+                "We failed to find a MyGCNT account connect to the selected user or their account is not discord-verified." +
+                " Please make sure this the user is linked to a verified MyGCNT account."
+            ).then(r => userProg.last_error_msg = r);
             return;
         }
 
         userProg.interaction.deleteReply().then();
         delete userProg.interaction;
         userProg.subject = "";
-        userProg.customer = member;
+        userProg.customer = customer;
 
         sendRequest("https://api.paypal.com/v2/invoicing/generate-next-invoice-number")
             .then(responseText => {
@@ -213,18 +247,18 @@ class InvoicingBot {
         let row = new ActionRowBuilder();
 
         if (this.userProgress.get(interaction.user.id)?.subject != null) {
-            embed = new MessageEmbed()
-                .setColor(process.env.COLOR_RED)
+            embed = new EmbedBuilder()
+                .setColor(this.getRedColor())
                 .setAuthor({name: ':warning: Are you sure? :warning:', iconURL: this.botLogo})
                 .setDescription("You currently have an unfinished invoice setup. If you continue, your current draft will be discarded. Do you want to continue?");
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId('cancel-new-invoice')
-                    .setStyle('SECONDARY')
+                    .setStyle('2')
                     .setLabel('Cancel'),
                 new ButtonBuilder()
                     .setCustomId('discard-invoice')
-                    .setStyle('DANGER')
+                    .setStyle('4')
                     .setLabel('Discard draft')
             );
         } else {
@@ -238,7 +272,7 @@ class InvoicingBot {
             });
 
             embed = new EmbedBuilder()
-                .setColor(process.env.COLOR)
+                .setColor(this.getColor())
                 .setAuthor({name: 'Who is this invoice for?', iconURL: this.botLogo})
                 .setDescription("Please select the user that this invoice is for using the dropdown below.");
 
@@ -251,6 +285,14 @@ class InvoicingBot {
         interaction.reply({embeds: [embed], components: [row]}).catch();
     }
 
+    getRedColor() {
+        return parseInt(process.env.COLOR_RED, 16);
+    }
+
+    getColor() {
+        return parseInt(process.env.COLOR, 16);
+    }
+
     /**
      * @param {TextChannel} channel
      * @param userProg
@@ -259,14 +301,28 @@ class InvoicingBot {
         const items = userProg?.items;
         const lastItem = items != null && items.length !== 0 ? items[items.length - 1] : null;
 
-        const embed = new MessageEmbed()
-            .setColor(process.env.COLOR)
+        const embed = new EmbedBuilder()
+            .setColor(this.getColor())
             .setTimestamp();
 
         let addBackButton = true;
         let description = "Enter the name of the item in the chat.";
         let title = "Enter the name.";
         let row = new ActionRowBuilder();
+        let row2 = null;
+
+        if (userProg.subject === InvoiceActionType.ENTER_NAME) {
+            row2 = new ActionRowBuilder();
+            row2.setComponents(
+                new TextInputBuilder()
+                    .setCustomId('item-enter-name')
+                    .setRequired(true)
+                    .setStyle(1)
+                    .setLabel('Item Name')
+                    .setPlaceholder('Name of the item')
+            )
+        }
+
         if (lastItem != null) {
             addBackButton = false;
             if (lastItem.name != null) {
@@ -275,7 +331,7 @@ class InvoicingBot {
                 if (lastItem.description == null) {
                     title = "Enter the description.";
                     description = "Enter the description of the item in the chat.";
-                    embed.addField("Name", lastItem.name, false);
+                    embed.addFields({name: "Name", value: lastItem.name});
                 } else if (lastItem.measure_unit == null) {
                     title = "Select the measure unit.";
                     description = "Click the measure unit you want to use for this invoice.";
@@ -288,12 +344,12 @@ class InvoicingBot {
                     row.addComponents(
                         new ButtonBuilder()
                             .setCustomId('mu-HOURS')
-                            .setStyle("PRIMARY")
+                            .setStyle(1)
                             .setLabel("Hours")
                             .setEmoji("⏱️"),
                         new ButtonBuilder()
                             .setCustomId("mu-AMOUNT")
-                            .setStyle("PRIMARY")
+                            .setStyle(1)
                             .setLabel("Amount")
                             .setEmoji("💰")
                     );
@@ -312,7 +368,7 @@ class InvoicingBot {
                         } else if (lastItem.quantity == null) {
                             title = "Enter the number of hours.";
                             description = "Enter the amount of hours that you spent on this item in the chat.";
-                            embed.addField("Hourly rate", lastItem.rate + " EUR", true);
+                            embed.addFields({name: "Hourly rate", value: lastItem.rate + " EUR"});
                         } else {
                             // add everything
                             title = "Review";
@@ -342,7 +398,7 @@ class InvoicingBot {
                         row.addComponents(
                             new ButtonBuilder()
                                 .setCustomId("submit-item")
-                                .setStyle("SUCCESS")
+                                .setStyle("3")
                                 .setLabel("Finish")
                         );
                     }
@@ -354,14 +410,14 @@ class InvoicingBot {
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId("item-go-back")
-                    .setStyle("SECONDARY")
+                    .setStyle("2")
                     .setLabel("Go back")
             );
         }
         row.addComponents(
             new ButtonBuilder()
                 .setCustomId("cancel-item")
-                .setStyle("DANGER")
+                .setStyle("4")
                 .setLabel("Cancel item")
         );
 
@@ -371,11 +427,11 @@ class InvoicingBot {
             row.setComponents(
                 new ButtonBuilder()
                     .setCustomId("confirm-cancel-item")
-                    .setStyle("DANGER")
+                    .setStyle("4")
                     .setLabel("Cancel item"),
                 new ButtonBuilder()
                     .setCustomId("cancel-cancel-item")
-                    .setStyle("PRIMARY")
+                    .setStyle(1)
                     .setLabel("Continue item setup")
             )
         }
@@ -385,8 +441,11 @@ class InvoicingBot {
         embed.setFooter({text: description});
 
         let msgObj = {embeds: [embed], components: []};
+        if (row2 != null) {
+            msgObj.components.push(row2);
+        }
         if (row.components.length !== 0) {
-            msgObj.components = [row];
+            msgObj.components.push(row);
         }
 
         if (userProg.last_item_message != null) {
@@ -404,14 +463,17 @@ class InvoicingBot {
      */
     async sendUpdateNewInvoiceMessage(channel, ownerId, userProg) {
         const embed = new EmbedBuilder()
-            .setColor(process.env.COLOR)
+            .setColor(this.getColor())
             .setAuthor({name: 'Creating a new invoice', iconURL: this.botLogo})
             .setTimestamp()
             .setFooter({text: 'Type "cancel" to cancel this invoice.'});
 
         if (userProg.sending) embed.setDescription("<a:loading:929001830766243840> Working on sending the invoice...");
         else if (userProg.sent) {
-            embed.setAuthor({name: 'Invoice - Scan to Pay', iconURL: 'https://www.gcnt.net/inc/img/discord-finance-bot-sent.png'});
+            embed.setAuthor({
+                name: 'Invoice - Scan to Pay',
+                iconURL: 'https://www.gcnt.net/inc/img/discord-finance-bot-sent.png'
+            });
             embed.setFooter({
                 text: 'Check your email or scan the QR code to pay this invoice with PayPal.',
                 iconURL: this.botLogo
@@ -467,14 +529,14 @@ class InvoicingBot {
                 row.addComponents(new ButtonBuilder()
                     .setCustomId('submit-invoice')
                     .setLabel('Submit')
-                    .setStyle("SUCCESS"));
+                    .setStyle("3"));
             }
         }
         if ((finished || userProg.items.length < 1) && !userProg.sent && !userProg.sending) {
             row.addComponents(new ButtonBuilder()
                 .setCustomId('add-invoice-item')
                 .setLabel('Add item')
-                .setStyle("PRIMARY"),
+                .setStyle(1),
             );
         }
 
@@ -595,14 +657,14 @@ class InvoicingBot {
      * @returns {Promise<void>}
      */
     async handleInteraction(interaction) {
+        const userProg = this.userProgress.get(interaction.user.id);
+        const userSub = userProg?.subject;
+
         if (interaction.isCommand()) {
             if (interaction.commandName === "create-invoice") {
                 this.sendNewInvoiceMessage(interaction);
             }
         } else if (interaction.isButton()) {
-            const userProg = this.userProgress.get(interaction.user.id);
-            const userSub = userProg?.subject;
-
             if (interaction.customId === "cancel-new-invoice") {
                 interaction.deleteReply().catch();
                 return;
@@ -638,6 +700,10 @@ class InvoicingBot {
                     this.handleSubmitItemInteraction(interaction, userProg).catch();
                 }
             }
+        } else if (interaction.isUserSelectMenu()) {
+            if (interaction.customId === "invoice-user-select") {
+                this.handleCustomerSelectInteraction(interaction, userProg).catch();
+            }
         }
     }
 
@@ -669,6 +735,26 @@ class InvoicingBot {
      */
     async handleAddInvoiceItemInteraction(interaction, userProg) {
         this.ignoreReply(interaction);
+
+        // interaction.channel.send({
+        //     components: [new ActionRowBuilder().addComponents(
+        //         new StringSelectMenuBuilder()
+        //             .setCustomId('item-measure-unit')
+        //             .setOptions(
+        //                 new StringSelectMenuOptionBuilder()
+        //                     .setValue('mu-HOURS')
+        //                     .setLabel('Hourly')
+        //                     .setDescription('Bill on an hourly basis.')
+        //                     .setEmoji('⏱️'),
+        //                 new StringSelectMenuOptionBuilder()
+        //                     .setValue('mu-AMOUNT')
+        //                     .setLabel('Specific amount')
+        //                     .setDescription('Bill for a specific amount.')
+        //                     .setEmoji('💰'),
+        //             )
+        //     )]
+        // });
+
         userProg.subject = InvoiceActionType.ENTER_NAME;
         userProg.items[userProg.items.length] = {};
         await this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg);
@@ -708,9 +794,12 @@ class InvoicingBot {
      */
     async sendErrorMessage(channel, title, description) {
         const embed = new EmbedBuilder()
-            .setColor('#ff6666')
+            .setColor(this.getRedColor())
             .setAuthor({name: title, iconURL: 'https://www.freeiconspng.com/uploads/red-circular-image-error-0.png'})
             .setDescription(description);
+
+        console.log(embed.toJSON());
+
         const sent = await channel.send({embeds: [embed]});
         try {
             return sent;
