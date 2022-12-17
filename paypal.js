@@ -82,7 +82,6 @@ function sendRequest(url, data = undefined, type = "POST", headers = {}) {
         };
         req.open(type, url);
         req.setRequestHeader("Content-Type", "application/json");
-        console.log("Tokkie: " + accessToken);
         req.setRequestHeader("Authorization", `Bearer ${accessToken}`);
         for (const header in headers) {
             req.setRequestHeader(header, headers[header]);
@@ -193,6 +192,10 @@ function sendInvoice(userProg, link) {
     });
 }
 
+async function getInvoice(link) {
+    return await sendRequest(link, undefined, "GET");
+}
+
 function round(number) {
     return formatter.format(number).replace('€', "").trim();
 }
@@ -237,5 +240,6 @@ module.exports = {
     round: round,
     getItemField: getItemField,
     getTotal: getTotal,
-    getPayPalUserInfo: getPayPalUserInfo
+    getPayPalUserInfo: getPayPalUserInfo,
+    getInvoice: getInvoice
 }

@@ -113,7 +113,13 @@ class CustomPlugins {
     ticketInfo = new Map();
 
     constructor() {
-        this.client = new Client({intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessageReactions]});
+        this.client = new Client({intents: [
+            GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildMessageReactions,
+                GatewayIntentBits.MessageContent
+            ]});
 
         this.client.on('ready', () => {
             console.log(`Logged in as ${this.client.user.tag}!`);
@@ -225,7 +231,7 @@ class CustomPlugins {
             return;
         }
 
-        this.giveUserPermission(interaction.channel, user).catch();
+        this.giveUserPermission(interaction.channel, user).catch(console.error);
         const embed = this.getEmbed("User added", `<@${user.id}> has been added to this order by <@${interaction.user.id}>.`, "#f58a42");
 
         const sent = await interaction.reply({"content": "User added!", fetchReply: true});
@@ -471,7 +477,7 @@ class CustomPlugins {
     async handleChatMessage(message) {
         if ((message.channel.parentId === this.categoryId && message.type === "CHANNEL_PINNED_MESSAGE") ||
             (message.channel.id === this.orderFromUsChannelId && !message.author.bot)) {
-            message.delete().catch();
+            message.delete().catch(console.error);
             return;
         }
         if (message.author.bot) return;
@@ -487,13 +493,13 @@ class CustomPlugins {
 
         if (ticketInfo.setupStatus === Status.BUDGETING) {
             if (!this.isAdmin(message.member)) {
-                message.delete().catch();
+                message.delete().catch(console.error);
             }
             return;
         }
 
         if (ticketInfo.setupStatus === Status.ENTER_SERVER_NAME) {
-            message.delete().catch();
+            message.delete().catch(console.error);
             if (message.content.length > 35) {
                 const embed = this.getEmbed("Server name too long", "The server name that you entered is too long. Please enter a server name with less than 35 characters", "#f54257");
                 const sent = await message.channel.send({embeds: [embed]});
@@ -505,7 +511,7 @@ class CustomPlugins {
 
             ticketInfo.setupStatus = Status.ENTER_DEADLINE;
             ticketInfo.serverName = message.content;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content, Status.ENTER_DEADLINE).catch();
+            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content, Status.ENTER_DEADLINE).catch(console.error);
 
             const embed = this.getEmbed(`When is the deadline for this product?`, null);
             const interactions = new MessageActionRow().addComponents(
@@ -516,16 +522,16 @@ class CustomPlugins {
                     .setEmoji('♾️')
             );
 
-            this.deleteLastMessage(ticketInfo, message.channel).catch();
+            this.deleteLastMessage(ticketInfo, message.channel).catch(console.error);
 
             const sent = await message.channel.send({embeds: [embed], components: [interactions]});
             ticketInfo.lastMessageId = sent.id;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id).catch();
+            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id).catch(console.error);
         } else if (ticketInfo.setupStatus === Status.ENTER_DEADLINE) {
-            message.delete().catch();
-            this.handleDeadlineSetting(message.channel, message.content).catch();
+            message.delete().catch(console.error);
+            this.handleDeadlineSetting(message.channel, message.content).catch(console.error);
         } else if (ticketInfo.setupStatus === Status.ENTER_PROJECT_DESCRIPTION) {
-            message.delete().catch();
+            message.delete().catch(console.error);
 
             ticketInfo.description = message.content;
             ticketInfo.setupStatus = Status.SUBMITTED;
@@ -535,10 +541,10 @@ class CustomPlugins {
 
             const embed = this.getEmbed(`:white_check_mark:  Thanks for answering the questions!`, "We will get back to you as soon as possible.");
 
-            this.deleteLastMessage(ticketInfo, message.channel).catch();
+            this.deleteLastMessage(ticketInfo, message.channel).catch(console.error);
 
             delete ticketInfo.lastMessageId;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', null).catch();
+            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', null).catch(console.error);
 
             message.channel.send({content: '<@&571717051727609857>', embeds: [embed]});
         }
@@ -549,7 +555,7 @@ class CustomPlugins {
 
         try {
             const previousMsg = await channel.messages.fetch(ticketInfo.lastMessageId);
-            previousMsg?.delete().catch();
+            previousMsg?.delete().catch(console.error);
         } catch (e) {
             console.log(e);
         }
@@ -568,7 +574,7 @@ class CustomPlugins {
         embed.setFooter({text: 'If you have any additional information, please use this channel to communicate with us.'});
 
         const sent = await channel.send({embeds: [embed]});
-        sent.pin().catch();
+        sent.pin().catch(console.error);
     }
 
     async handleDeadlineSetting(channel, value) {
@@ -584,15 +590,15 @@ class CustomPlugins {
 
         ticketInfo.deadline = value;
         ticketInfo.setupStatus = Status.ENTER_PROJECT_DESCRIPTION;
-        this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value, Status.ENTER_PROJECT_DESCRIPTION).catch();
+        this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value, Status.ENTER_PROJECT_DESCRIPTION).catch(console.error);
 
         const embed = this.getEmbed(`Please describe your project in as much detail as possible.`, null);
 
-        this.deleteLastMessage(ticketInfo, channel).catch();
+        this.deleteLastMessage(ticketInfo, channel).catch(console.error);
 
         const sent = await channel.send({embeds: [embed]});
         ticketInfo.lastMessageId = sent.id;
-        this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id, null).catch();
+        this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id, null).catch(console.error);
     }
 
     /**
@@ -683,7 +689,7 @@ class CustomPlugins {
             setTimeout(() => {
                 reply.delete();
             }, 5000);
-            this.sendFirstTicketMessage(await created.fetch(true), interaction.user, userRes[0].id).catch();
+            this.sendFirstTicketMessage(await created.fetch(true), interaction.user, userRes[0].id).catch(console.error);
         } catch (e) {
             console.error(e);
             interaction.channel.send("Something went wrong. Please try again later.");
@@ -811,11 +817,11 @@ class CustomPlugins {
         const embed = this.getEmbed("What is the name of your server?", null);
         const sentMsg = await channel.send({embeds: [embed]});
 
-        sentMsg.pin().catch();
+        sentMsg.pin().catch(console.error);
 
         currentTicketInfo.setupStatus = Status.ENTER_SERVER_NAME;
         currentTicketInfo.lastMessageId = sentMsg.id;
-        this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, Status.ENTER_SERVER_NAME).catch();
+        this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, Status.ENTER_SERVER_NAME).catch(console.error);
     }
 
     getEmbed(title, description = null, color = process.env.COLOR) {
@@ -856,7 +862,7 @@ class CustomPlugins {
 
         const sent = await channel.send({embeds: [firstMsg]});
         currentTicketInfo.lastMessageId = sent.id;
-        this.setTicketSQLValue(ticket, "last_discord_message", sent.id).catch();
+        this.setTicketSQLValue(ticket, "last_discord_message", sent.id).catch(console.error);
     }
 
     async sendFirstMessage() {
@@ -880,7 +886,7 @@ class CustomPlugins {
             );
 
         const sent = await channel.send({embeds: [embed], components: [actionRow]});
-        sent.pin().catch();
+        sent.pin().catch(console.error);
     }
 }
 

@@ -24,8 +24,9 @@ const {
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
     GatewayIntentBits, ModalBuilder, TextInputBuilder, BaseSelectMenuBuilder, StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder
+    StringSelectMenuOptionBuilder, StringSelectMenuInteraction, ChannelSelectMenuBuilder, ChannelSelectMenuInteraction
 } = require("discord.js");
+const {getInvoice} = require("./paypal");
 
 const InvoiceActionType = {
     CUSTOMER: "CUSTOMER",
@@ -43,31 +44,38 @@ class InvoicingBot {
     botLogo = "https://www.gcnt.net/inc/img/discord-finance-bot-logo.png";
     client;
     paymentMessenger;
-    userProgress;
+    userProgress = new Map();
+    history = new Map();
 
     constructor() {
-        this.userProgress = new Map();
-
-        this.client = new Client({intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessageReactions]});
+        this.client = new Client({
+            intents: [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildMessageReactions,
+                GatewayIntentBits.MessageContent
+            ]
+        });
 
         this.client.on('ready', () => {
             this.handleApplicationReady()
         });
         this.client.on('messageCreate', async (message) => {
-            this.handleMessageCreation(message).catch()
+            this.handleMessageCreation(message).catch(console.error)
         });
         this.client.on('interactionCreate', (interaction) => {
-            this.handleInteraction(interaction).catch();
+            this.handleInteraction(interaction).catch(console.error);
         });
 
-        this.client.login(process.env.CLIENT_TOKEN).catch();
+        this.client.login(process.env.CLIENT_TOKEN).catch(console.error);
     }
 
     handleApplicationReady() {
         console.log(`Logged in as ${this.client.user.tag}!`);
         this.paymentMessenger = new PaymentMessenger(this.client);
 
-        getAccessToken().catch();
+        getAccessToken().catch(console.error);
         this.createCommands();
     }
 
@@ -78,24 +86,7 @@ class InvoicingBot {
     async handleMessageCreation(msg) {
         this.paymentMessenger.processMessage(msg);
 
-        if (msg.author.id == "376370161068015618") {
-            console.log("LOL")
-            msg.channel.send({
-                components: [
-                    new ActionRowBuilder().addComponents(
-                        new TextInputBuilder()
-                            .setCustomId('item-enter-name')
-                            .setRequired(true)
-                            .setStyle(1)
-                            .setLabel('Item Name')
-                            .setPlaceholder('Name of the item')
-                    )
-                ]
-            });
-            return;
-        }
-
-        if (!msg.author.bot) return;
+        if (msg.author.bot) return;
 
         const userProg = this.userProgress.get(msg.author.id);
         const userSub = userProg?.subject;
@@ -120,10 +111,21 @@ class InvoicingBot {
             return;
         }
 
-        if (userSub === InvoiceActionType.ENTER_NAME && lastItem != null) {
-            this.handleNameInputInteraction(msg, userProg, lastItem);
-        } else if (userSub === InvoiceActionType.ENTER_DESCRIPTION && lastItem != null) {
-            this.handleDescriptionInputInteraction(msg, userProg, lastItem);
+        if (lastItem != null) {
+            switch (userSub) {
+                case InvoiceActionType.ENTER_NAME:
+                    this.handleNameInputInteraction(msg, userProg, lastItem);
+                    break;
+                case InvoiceActionType.ENTER_DESCRIPTION:
+                    this.handleDescriptionInputInteraction(msg, userProg, lastItem);
+                    break;
+                case InvoiceActionType.ENTER_RATE:
+                    this.handleRateInputInteraction(msg, userProg);
+                    break;
+                case InvoiceActionType.ENTER_QUANTITY:
+                    this.handleQuantityInputInteraction(msg, userProg, lastItem);
+                    break;
+            }
         }
     }
 
@@ -133,7 +135,7 @@ class InvoicingBot {
      * @param lastItem
      */
     handleNameInputInteraction(msg, userProg, lastItem) {
-        msg.delete().catch();
+        msg.delete().catch(console.error);
         lastItem.name = msg.content;
         userProg.subject = InvoiceActionType.ENTER_DESCRIPTION;
         this.sendNewItemMessage(msg.channel, userProg);
@@ -145,27 +147,36 @@ class InvoicingBot {
      * @param lastItem
      */
     handleDescriptionInputInteraction(msg, userProg, lastItem) {
-        msg.delete().catch();
+        msg.delete().catch(console.error);
         lastItem.description = msg.content;
         userProg.subject = InvoiceActionType.ENTER_MEASURE_UNIT;
         this.sendNewItemMessage(msg.channel, userProg);
     }
 
     /**
-     * @param {Message} msg
+     * @param {Message|ButtonInteraction} msg
      * @param userProg
-     * @param lastItem
      */
-    handleRateInputInteraction(msg, userProg, lastItem) {
-        msg.delete().catch();
-        if (Number.isNaN(msg.content)) {
+    handleRateInputInteraction(msg, userProg) {
+        let content;
+        if (msg instanceof Message) {
+            msg.delete().catch(console.error);
+            content = msg.content;
+        } else {
+            this.ignoreReply(msg);
+            content = msg.customId.replace("hr-", "");
+        }
+
+        const lastItem = userProg.items[userProg.items.length - 1];
+
+        if (Number.isNaN(content)) {
             this.sendErrorMessage(msg.channel, "Rate not a number!", "The amount you entered is not a valid number.")
                 .then(r => userProg.last_error_msg = r);
-        } else if (Number.parseFloat(msg.content) < 0) {
+        } else if (Number.parseFloat(content) < 0) {
             this.sendErrorMessage(msg.channel, "Rate too low!", "The number you entered must be 0 or greater.")
                 .then(r => userProg.last_error_msg = r);
         } else {
-            lastItem.rate = Number.parseFloat(msg.content);
+            lastItem.rate = Number.parseFloat(content);
             userProg.subject = lastItem.measure_unit === "HOURS" ? InvoiceActionType.ENTER_QUANTITY : InvoiceActionType.REVIEW_ITEM;
             this.sendNewItemMessage(msg.channel, userProg);
         }
@@ -177,7 +188,7 @@ class InvoicingBot {
      * @param lastItem
      */
     handleQuantityInputInteraction(msg, userProg, lastItem) {
-        msg.delete().catch();
+        msg.delete().catch(console.error);
         if (Number.isNaN(msg.content)) {
             this.sendErrorMessage(msg.channel, "Quantity not a number!", "The amount you entered is not a valid number.").then(r => userProg.last_error_msg = r);
         } else if (Number.parseFloat(msg.content) < 0) {
@@ -195,8 +206,6 @@ class InvoicingBot {
      * @param userProg
      */
     async handleCustomerSelectInteraction(interaction, userProg) {
-        console.log(interaction.users);
-
         const customer = interaction.users.at(0);
         userProg.customer_info = await getPayPalUserInfo(customer?.id);
         if (userProg.customer_info == null) {
@@ -249,7 +258,7 @@ class InvoicingBot {
         if (this.userProgress.get(interaction.user.id)?.subject != null) {
             embed = new EmbedBuilder()
                 .setColor(this.getRedColor())
-                .setAuthor({name: ':warning: Are you sure? :warning:', iconURL: this.botLogo})
+                .setAuthor({name: '⚠️ Are you sure? ⚠️', iconURL: this.botLogo})
                 .setDescription("You currently have an unfinished invoice setup. If you continue, your current draft will be discarded. Do you want to continue?");
             row.addComponents(
                 new ButtonBuilder()
@@ -282,7 +291,7 @@ class InvoicingBot {
                 .setMaxValues(1));
         }
 
-        interaction.reply({embeds: [embed], components: [row]}).catch();
+        interaction.reply({embeds: [embed], components: [row]}).catch(console.error);
     }
 
     getRedColor() {
@@ -309,19 +318,7 @@ class InvoicingBot {
         let description = "Enter the name of the item in the chat.";
         let title = "Enter the name.";
         let row = new ActionRowBuilder();
-        let row2 = null;
-
-        if (userProg.subject === InvoiceActionType.ENTER_NAME) {
-            row2 = new ActionRowBuilder();
-            row2.setComponents(
-                new TextInputBuilder()
-                    .setCustomId('item-enter-name')
-                    .setRequired(true)
-                    .setStyle(1)
-                    .setLabel('Item Name')
-                    .setPlaceholder('Name of the item')
-            )
-        }
+        let row2 = new ActionRowBuilder();
 
         if (lastItem != null) {
             addBackButton = false;
@@ -341,17 +338,21 @@ class InvoicingBot {
                         {name: "Description", value: lastItem.description}
                     );
 
-                    row.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('mu-HOURS')
-                            .setStyle(1)
-                            .setLabel("Hours")
-                            .setEmoji("⏱️"),
-                        new ButtonBuilder()
-                            .setCustomId("mu-AMOUNT")
-                            .setStyle(1)
-                            .setLabel("Amount")
-                            .setEmoji("💰")
+                    row2.addComponents(
+                        new StringSelectMenuBuilder()
+                            .setCustomId('item-measure-unit')
+                            .setOptions(
+                                new StringSelectMenuOptionBuilder()
+                                    .setValue('mu-HOURS')
+                                    .setLabel('Hourly')
+                                    .setDescription('Bill on an hourly basis.')
+                                    .setEmoji('⏱️'),
+                                new StringSelectMenuOptionBuilder()
+                                    .setValue('mu-AMOUNT')
+                                    .setLabel('Specific amount')
+                                    .setDescription('Bill for a specific amount.')
+                                    .setEmoji('💰'),
+                            )
                     );
                 } else {
                     embed.addFields(
@@ -364,7 +365,25 @@ class InvoicingBot {
 
                         if (lastItem.rate == null) {
                             title = "Enter the hourly rate.";
-                            description = "Enter the amount of money that you want to charge per hour in the chat.";
+                            description = "Enter the hourly rate in the chat or select any of the standard options below.";
+
+                            row2.addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('hr-12')
+                                    .setStyle(1)
+                                    .setEmoji('💵')
+                                    .setLabel('12 EUR (budget)'),
+                                new ButtonBuilder()
+                                    .setCustomId('hr-14')
+                                    .setStyle(1)
+                                    .setEmoji('💶')
+                                    .setLabel('14 EUR (premium)'),
+                                new ButtonBuilder()
+                                    .setCustomId('hr-16')
+                                    .setStyle(1)
+                                    .setEmoji('💷')
+                                    .setLabel('16 EUR (pro)')
+                            );
                         } else if (lastItem.quantity == null) {
                             title = "Enter the number of hours.";
                             description = "Enter the amount of hours that you spent on this item in the chat.";
@@ -441,7 +460,8 @@ class InvoicingBot {
         embed.setFooter({text: description});
 
         let msgObj = {embeds: [embed], components: []};
-        if (row2 != null) {
+
+        if (row2.components.length !== 0) {
             msgObj.components.push(row2);
         }
         if (row.components.length !== 0) {
@@ -449,7 +469,7 @@ class InvoicingBot {
         }
 
         if (userProg.last_item_message != null) {
-            userProg.last_item_message.edit(msgObj).catch();
+            userProg.last_item_message.edit(msgObj).catch(console.error);
         } else {
             channel.send(msgObj).then(sent => userProg.last_item_message = sent);
         }
@@ -460,13 +480,15 @@ class InvoicingBot {
      * @param {TextChannel} channel
      * @param ownerId
      * @param userProg
+     * @param href
      */
-    async sendUpdateNewInvoiceMessage(channel, ownerId, userProg) {
+    async sendUpdateNewInvoiceMessage(channel, ownerId, userProg, href = null) {
         const embed = new EmbedBuilder()
             .setColor(this.getColor())
             .setAuthor({name: 'Creating a new invoice', iconURL: this.botLogo})
             .setTimestamp()
             .setFooter({text: 'Type "cancel" to cancel this invoice.'});
+        const row = new ActionRowBuilder();
 
         if (userProg.sending) embed.setDescription("<a:loading:929001830766243840> Working on sending the invoice...");
         else if (userProg.sent) {
@@ -486,6 +508,15 @@ class InvoicingBot {
                 const res = await channel.guild.channels.cache.get(process.env.CHANNEL_BOT_MESSAGING).send({files: [sfattach]});
                 const qrUrl = res.attachments.first().attachment;
                 embed.setThumbnail(qrUrl);
+            }
+
+            if (href != null) {
+                row.addComponents(
+                    new ButtonBuilder()
+                        .setLabel("Pay with PayPal")
+                        .setStyle(5)
+                        .setURL(href)
+                )
             }
         }
 
@@ -522,7 +553,6 @@ class InvoicingBot {
             }
         }
 
-        const row = new ActionRowBuilder();
         // execute this when no valid items OR there are valid items but user is currently editing one.
         if (finished && !userProg.sent && !userProg.sending) {
             if (userProg.items != null && number !== 0) {
@@ -542,7 +572,19 @@ class InvoicingBot {
 
         let msgObj = {embeds: [embed], components: []};
         if (row.components.length !== 0) {
-            msgObj.components = [row];
+            msgObj.components.push(row);
+        }
+
+        if (userProg.sent && userProg.invoiceId != null) {
+            // deleting the old invoice message after 10 minutes of initial setup.
+            if (this.history.get(userProg.invoiceId)) {
+                setTimeout(() => {
+                    // todo remove the original message here maybe?
+                    this.history.delete(userProg.invoiceId);
+                }, 1000 * 60 * 10);
+            }
+
+            this.history.set(userProg.invoiceId, msgObj);
         }
 
         if (userProg.new_message != null) {
@@ -574,9 +616,9 @@ class InvoicingBot {
      * @param userProg
      */
     handleDiscardInvoiceInteraction(interaction, userProg) {
-        userProg.new_message?.delete().catch();
+        userProg.new_message?.delete().catch(console.error);
         this.userProgress.delete(interaction.user.id);
-        interaction.deleteReply().catch();
+        interaction.deleteReply().catch(console.error);
     }
 
     /**
@@ -639,7 +681,7 @@ class InvoicingBot {
         userProg.cancelling_item = false;
         this.ignoreReply(interaction);
 
-        userProg.last_item_message?.delete().catch();
+        userProg.last_item_message?.delete().catch(console.error);
         delete userProg.last_item_message;
         try {
             userProg.items.splice(userProg.items.length - 1, 1);
@@ -647,7 +689,7 @@ class InvoicingBot {
             console.error(error);
         }
         userProg.subject = InvoiceActionType.ADD_ITEMS;
-        this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg).catch();
+        this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg).catch(console.error);
     }
 
 
@@ -666,7 +708,7 @@ class InvoicingBot {
             }
         } else if (interaction.isButton()) {
             if (interaction.customId === "cancel-new-invoice") {
-                interaction.deleteReply().catch();
+                interaction.deleteReply().catch(console.error);
                 return;
             } else if (interaction.customId === "discard-invoice") {
                 this.handleDiscardInvoiceInteraction(interaction, userProg);
@@ -687,22 +729,28 @@ class InvoicingBot {
                 }
             } else if (userSub === InvoiceActionType.ADD_ITEMS) {
                 if (interaction.customId === "submit-invoice") {
-                    this.handleSubmitInvoiceInteraction(interaction, userProg).catch();
+                    this.handleSubmitInvoiceInteraction(interaction, userProg).catch(console.error);
                 } else if (interaction.customId === "add-invoice-item") {
-                    this.handleAddInvoiceItemInteraction(interaction, userProg).catch();
-                }
-            } else if (userSub === InvoiceActionType.ENTER_MEASURE_UNIT) {
-                if (interaction.customId.startsWith("mu-")) {
-                    this.handleSelectMeasureUnitInteraction(interaction, userProg);
+                    this.handleAddInvoiceItemInteraction(interaction, userProg).catch(console.error);
                 }
             } else if (userSub === InvoiceActionType.REVIEW_ITEM) {
                 if (interaction.customId === "submit-item") {
-                    this.handleSubmitItemInteraction(interaction, userProg).catch();
+                    this.handleSubmitItemInteraction(interaction, userProg).catch(console.error);
                 }
+            } else if (userSub === InvoiceActionType.ENTER_RATE) {
+                this.handleRateInputInteraction(interaction, userProg)
             }
         } else if (interaction.isUserSelectMenu()) {
             if (interaction.customId === "invoice-user-select") {
-                this.handleCustomerSelectInteraction(interaction, userProg).catch();
+                this.handleCustomerSelectInteraction(interaction, userProg).catch(console.error);
+            }
+        } else if (interaction.isStringSelectMenu()) {
+            if (interaction.customId === "item-measure-unit" && userSub === InvoiceActionType.ENTER_MEASURE_UNIT) {
+                this.handleSelectMeasureUnitInteraction(interaction, userProg);
+            }
+        } else if (interaction.isChannelSelectMenu()) {
+            if (interaction.customId.startsWith("si-")) {
+                this.handleSendInvoiceToChannel(interaction, userProg);
             }
         }
     }
@@ -718,15 +766,46 @@ class InvoicingBot {
 
         try {
             const res = await createDraft(userProg);
-            await sendInvoice(userProg, res["href"]);
+            await sendInvoice(userProg, res.href);
             await this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg);
-            const qr = await getQRCode(res["href"]);
-            userProg.qr_code = qr.split("\n")[4];
 
-            await this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg);
+            const [qr, invoice] = await Promise.all([
+                getQRCode(res.href),
+                getInvoice(res.href)
+            ]);
+
+            userProg.qr_code = qr.split("\n")[4];
+            userProg.invoiceId = invoice.id;
+
+            const href = invoice.detail.metadata.recipient_view_url;
+
+            await this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg, href);
+            this.sendShareInvoiceToChannelMessage(interaction.channel, userProg);
         } catch (error) {
             console.error(error);
         }
+    }
+
+    /**
+     * @param {TextChannel} channel
+     * @param userProg
+     */
+    sendShareInvoiceToChannelMessage(channel, userProg) {
+        const embed = new EmbedBuilder()
+            .setColor(this.getColor())
+            .setTitle('Share invoice to channel')
+            .setDescription("If you want to share this invoice to a specific channel, please select a channel below. Or click the button to cancel.\n\n" +
+                "*You have 10 minutes the time to select a channel.*");
+
+        const row = new ActionRowBuilder()
+            .addComponents(new ChannelSelectMenuBuilder()
+                .setCustomId("si-" + userProg.invoiceId)
+                .addChannelTypes(0)
+                .setMaxValues(1)
+                .setMinValues(1)
+            );
+
+        channel.send({embeds: [embed], components: [row]})
     }
 
     /**
@@ -762,12 +841,15 @@ class InvoicingBot {
     }
 
     /**
-     * @param {ButtonInteraction} interaction
+     * @param {StringSelectMenuInteraction} interaction
      * @param userProg
      */
     handleSelectMeasureUnitInteraction(interaction, userProg) {
         this.ignoreReply(interaction);
-        userProg.items[userProg.items.length - 1].measure_unit = interaction.customId.replace("mu-", "");
+        const selected = interaction.values[0];
+        if (!selected.startsWith("mu-")) return;
+
+        userProg.items[userProg.items.length - 1].measure_unit = selected.replace("mu-", "");
         userProg.subject = InvoiceActionType.ENTER_RATE;
         this.sendNewItemMessage(interaction.channel, userProg);
     }
@@ -778,7 +860,7 @@ class InvoicingBot {
      */
     async handleSubmitItemInteraction(interaction, userProg) {
         this.ignoreReply(interaction);
-        userProg.last_item_message?.delete().catch();
+        userProg.last_item_message?.delete().catch(console.error);
 
         delete userProg.last_item_message;
         await this.sendUpdateNewInvoiceMessage(interaction.channel, interaction.user.id, userProg);
@@ -798,8 +880,6 @@ class InvoicingBot {
             .setAuthor({name: title, iconURL: 'https://www.freeiconspng.com/uploads/red-circular-image-error-0.png'})
             .setDescription(description);
 
-        console.log(embed.toJSON());
-
         const sent = await channel.send({embeds: [embed]});
         try {
             return sent;
@@ -809,12 +889,29 @@ class InvoicingBot {
     }
 
     /**
-     * @param {ButtonInteraction} interaction
+     * @param {StringSelectMenuInteraction|ButtonInteraction|ChannelSelectMenuInteraction} interaction
      */
     ignoreReply(interaction) {
-        interaction.deferUpdate().catch();
+        interaction.deferUpdate().catch(console.error);
     }
 
+    /**
+     * @param {ChannelSelectMenuInteraction} interaction
+     * @param userProg
+     */
+    handleSendInvoiceToChannel(interaction, userProg) {
+        this.ignoreReply(interaction);
+
+        interaction.message.react('👍').catch(console.error);
+
+        const invoiceId = interaction.customId.replace("si-", "");
+        const channel = interaction.channels.at(0);
+
+        const msgObj = this.history.get(invoiceId);
+        if (msgObj == null) return;
+
+        channel.send(msgObj);
+    }
 }
 
 module.exports = InvoicingBot;
