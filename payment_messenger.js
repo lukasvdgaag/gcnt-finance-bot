@@ -83,7 +83,7 @@ class PaymentMessenger {
             console.log(transactionInfo);
 
             const emb = new MessageEmbed()
-                .setColor(process.env.COLOR)
+                .setColor(process.env.THEME_COLOR)
                 .setAuthor({name: 'Thanks for your purchase!', iconURL: 'https://www.gcnt.net/inc/img/discord-finance-bot-check.png'})
                 .setFooter({text: "Purchased through PayPal", iconURL: 'https://www.gcnt.net/inc/img/discord-finance-bot-logo.png'});
 

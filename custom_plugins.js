@@ -824,7 +824,7 @@ class CustomPlugins {
         this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, Status.ENTER_SERVER_NAME).catch(console.error);
     }
 
-    getEmbed(title, description = null, color = process.env.COLOR) {
+    getEmbed(title, description = null, color = process.env.THEME_COLOR) {
         const embed = new EmbedBuilder()
             .setTitle(title)
             .setColor(color);

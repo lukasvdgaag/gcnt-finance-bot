@@ -295,11 +295,11 @@ class InvoicingBot {
     }
 
     getRedColor() {
-        return parseInt(process.env.COLOR_RED, 16);
+        return process.env.COLOR_RED;
     }
 
     getColor() {
-        return parseInt(process.env.COLOR, 16);
+        return process.env.THEME_COLOR;
     }
 
     /**
@@ -575,16 +575,17 @@ class InvoicingBot {
             msgObj.components.push(row);
         }
 
-        if (userProg.sent && userProg.invoiceId != null) {
+        const invoiceId = userProg.invoiceId;
+        if (userProg.sent && invoiceId != null) {
             // deleting the old invoice message after 10 minutes of initial setup.
-            if (this.history.get(userProg.invoiceId)) {
-                setTimeout(() => {
-                    // todo remove the original message here maybe?
-                    this.history.delete(userProg.invoiceId);
-                }, 1000 * 60 * 10);
-            }
+            setTimeout(() => {
+                this.history.get(invoiceId)?.message?.delete().catch(() => {});
+                this.history.delete(invoiceId);
+            }, 1000 * 60 * 10);
 
-            this.history.set(userProg.invoiceId, msgObj);
+            this.history.set(invoiceId, {
+                contents: msgObj
+            });
         }
 
         if (userProg.new_message != null) {
@@ -790,7 +791,7 @@ class InvoicingBot {
      * @param {TextChannel} channel
      * @param userProg
      */
-    sendShareInvoiceToChannelMessage(channel, userProg) {
+    async sendShareInvoiceToChannelMessage(channel, userProg) {
         const embed = new EmbedBuilder()
             .setColor(this.getColor())
             .setTitle('Share invoice to channel')
@@ -805,7 +806,10 @@ class InvoicingBot {
                 .setMinValues(1)
             );
 
-        channel.send({embeds: [embed], components: [row]})
+        const message = await channel.send({embeds: [embed], components: [row]});
+
+        const invoiceHistoryMsg = this.history.get(userProg.invoiceId);
+        if (invoiceHistoryMsg != null) invoiceHistoryMsg.message = message;
     }
 
     /**
@@ -814,25 +818,6 @@ class InvoicingBot {
      */
     async handleAddInvoiceItemInteraction(interaction, userProg) {
         this.ignoreReply(interaction);
-
-        // interaction.channel.send({
-        //     components: [new ActionRowBuilder().addComponents(
-        //         new StringSelectMenuBuilder()
-        //             .setCustomId('item-measure-unit')
-        //             .setOptions(
-        //                 new StringSelectMenuOptionBuilder()
-        //                     .setValue('mu-HOURS')
-        //                     .setLabel('Hourly')
-        //                     .setDescription('Bill on an hourly basis.')
-        //                     .setEmoji('⏱️'),
-        //                 new StringSelectMenuOptionBuilder()
-        //                     .setValue('mu-AMOUNT')
-        //                     .setLabel('Specific amount')
-        //                     .setDescription('Bill for a specific amount.')
-        //                     .setEmoji('💰'),
-        //             )
-        //     )]
-        // });
 
         userProg.subject = InvoiceActionType.ENTER_NAME;
         userProg.items[userProg.items.length] = {};
@@ -902,7 +887,8 @@ class InvoicingBot {
     handleSendInvoiceToChannel(interaction, userProg) {
         this.ignoreReply(interaction);
 
-        interaction.message.react('👍').catch(console.error);
+        interaction.message.react('👍').catch(() => {
+        });
 
         const invoiceId = interaction.customId.replace("si-", "");
         const channel = interaction.channels.at(0);
@@ -910,7 +896,7 @@ class InvoicingBot {
         const msgObj = this.history.get(invoiceId);
         if (msgObj == null) return;
 
-        channel.send(msgObj);
+        channel.send(msgObj.contents);
     }
 }
 
