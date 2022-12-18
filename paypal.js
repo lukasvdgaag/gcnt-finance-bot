@@ -9,6 +9,11 @@ let accessToken = "";
 
 async function getPayPalUserInfo(userDiscord) {
     return new Promise(async function (ok, fail) {
+        if (userDiscord == null) {
+            ok(null);
+            return;
+        }
+
         const con = mysql.createConnection({
             host: process.env.MYSQL_HOST,
             user: process.env.MYSQL_USER,
@@ -47,6 +52,7 @@ async function getAccessToken() {
         if (req.status === 200) {
             const json = JSON.parse(req.responseText);
             accessToken = json["access_token"];
+            console.log(accessToken)
             const expiresIn = json["expires_in"];
             setTimeout(getAccessToken, expiresIn * 900);
         }
@@ -77,7 +83,6 @@ function sendRequest(url, data = undefined, type = "POST", headers = {}) {
         };
         req.open(type, url);
         req.setRequestHeader("Content-Type", "application/json");
-        console.log("Tokkie: " + accessToken);
         req.setRequestHeader("Authorization", `Bearer ${accessToken}`);
         for (const header in headers) {
             req.setRequestHeader(header, headers[header]);
@@ -153,43 +158,74 @@ function createDraft(userProg) {
         data.configuration.partial_payment.allow_partial_payment_amount.value = Math.round((total / 2) * 100) / 100;
 
         const json = JSON.stringify(data);
-        sendRequest("https://api.paypal.com/v2/invoicing/invoices", json)
-            .then(res => {
-                ok(res);
-            })
-            .catch(error => {
-                console.error(error);
-                fail();
-            });
+        return await sendRequest("https://api.paypal.com/v2/invoicing/invoices", json);
     });
 }
 
-function getQRCode(link) {
-    return new Promise(async function (ok, fail) {
-        sendRequest(link + "/generate-qr-code", '{"action":"pay"}').then(res => {
-            ok(res);
-        }).catch(error => {
-            console.error(error)
-            fail();
-        });
-    });
+async function getQRCode(link) {
+    return await sendRequest(link + "/generate-qr-code", '{"action":"pay"}');
 }
 
-function sendInvoice(userProg, link) {
-    return new Promise(async function (ok, fail) {
-        sendRequest(link + "/send", `{"send_to_invoicer":true}`).then(() => {
-            userProg.sending = false;
-            userProg.sent = true;
-            ok();
-        }).catch(error => {
-            console.error(error)
-            fail();
-        });
-    });
+async function sendInvoice(userProg, link) {
+    await sendRequest(link + "/send", `{"send_to_invoicer":true}`);
+    userProg.sending = false;
+    userProg.sent = true;
+}
+
+async function getInvoice(link) {
+    return await sendRequest(link, undefined, "GET");
 }
 
 function round(number) {
     return formatter.format(number).replace('€', "").trim();
+}
+
+async function lookupTransactions(email, date) {
+    const currentDate = new Date();
+    let startDate;
+    let endDate;
+
+    if (date) {
+        startDate = parseDate(date);
+        startDate.setDate(startDate.getDate() - 15)
+
+        endDate = parseDate(date);
+        endDate.setDate(endDate.getDate() + 15);
+        if (endDate > currentDate) endDate = currentDate;
+    } else {
+        startDate = new Date();
+        startDate.setDate(currentDate.getDate() - 31);
+        endDate = currentDate;
+    }
+
+    console.log(startDate)
+
+    const url = `https://api.paypal.com/v1/reporting/transactions?fields=all&start_date=${startDate.toISOString()}&end_date=${endDate.toISOString()}`;
+    /**
+     * @type {Array}
+     */
+    const res = await sendRequest(url, undefined, "GET");
+    const transactions = res.transaction_details;
+
+    return transactions.filter(t => t.payer_info.email_address === email).reverse();
+}
+
+function parseDate(input) {
+    return new Date(input);
+}
+
+function getTransactionOrigin(transaction) {
+    const custom = transaction.transaction_info.custom_field;
+
+    if (custom.startsWith("mygcnt_purchase")) {
+        return "MyGCNT";
+    } else if (custom.startsWith("resource_purchase")) {
+        return "SpigotMC";
+    } else if (custom.length !== 0) {
+        return "BuiltByBit (McMarket)?";
+    } else {
+        return "Unknown";
+    }
 }
 
 function getTotal(items) {
@@ -206,8 +242,8 @@ function getTotal(items) {
 
 /**
  *
- * @param item
- * @returns {{name, value: string}}
+ * @param {any} item
+ * @returns {{name: string, value: string}}
  */
 function getItemField(item) {
     let price;
@@ -223,6 +259,19 @@ function getItemField(item) {
     }
 }
 
+function prettifyPayPalStatus(status) {
+    switch (status) {
+        case "S":
+            return "✅"
+        case "V":
+            return "↩️"
+        case "P":
+            return "⏱️"
+        case "D":
+            return "❌"
+    }
+}
+
 module.exports = {
     sendRequest: sendRequest,
     getAccessToken: getAccessToken,
@@ -232,5 +281,9 @@ module.exports = {
     round: round,
     getItemField: getItemField,
     getTotal: getTotal,
-    getPayPalUserInfo: getPayPalUserInfo
+    getPayPalUserInfo: getPayPalUserInfo,
+    getInvoice: getInvoice,
+    lookupTransactions: lookupTransactions,
+    prettifyPayPalStatus: prettifyPayPalStatus,
+    getTransactionOrigin: getTransactionOrigin
 }
