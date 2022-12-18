@@ -23,10 +23,21 @@ const {
     TextChannel,
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
-    GatewayIntentBits, ModalBuilder, TextInputBuilder, BaseSelectMenuBuilder, StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder, StringSelectMenuInteraction, ChannelSelectMenuBuilder, ChannelSelectMenuInteraction
+    GatewayIntentBits,
+    ModalBuilder,
+    TextInputBuilder,
+    BaseSelectMenuBuilder,
+    StringSelectMenuBuilder,
+    StringSelectMenuOptionBuilder,
+    StringSelectMenuInteraction,
+    ChannelSelectMenuBuilder,
+    ChannelSelectMenuInteraction,
+    SlashCommandBuilder,
+    PermissionsBitField,
+    SlashCommandSubcommandBuilder,
+    SlashCommandStringOption
 } = require("discord.js");
-const {getInvoice} = require("./paypal");
+const {getInvoice, lookupTransactions, prettifyPayPalStatus, getTransactionOrigin} = require("./paypal");
 
 const InvoiceActionType = {
     CUSTOMER: "CUSTOMER",
@@ -106,8 +117,9 @@ class InvoicingBot {
             if (userProg.last_item_message != null) userProg.last_item_message.delete();
             if (userProg.new_message != null) userProg.new_message.delete();
             this.userProgress.delete(msg.author.id);
+
             const error = await this.sendErrorMessage(msg.channel, "Invoice cancelled!", "Your current PayPal Invoice Setup has been discarded.");
-            setTimeout(() => error.delete(), 8000);
+            setTimeout(() => error.delete().catch(() => {}), 8000);
             return;
         }
 
@@ -190,9 +202,11 @@ class InvoicingBot {
     handleQuantityInputInteraction(msg, userProg, lastItem) {
         msg.delete().catch(console.error);
         if (Number.isNaN(msg.content)) {
-            this.sendErrorMessage(msg.channel, "Quantity not a number!", "The amount you entered is not a valid number.").then(r => userProg.last_error_msg = r);
+            this.sendErrorMessage(msg.channel, "Quantity not a number!", "The amount you entered is not a valid number.")
+                .then(r => userProg.last_error_msg = r);
         } else if (Number.parseFloat(msg.content) < 0) {
-            this.sendErrorMessage(msg.channel, "Quantity too low!", "The number you entered must be 0 or greater.").then(r => userProg.last_error_msg = r);
+            this.sendErrorMessage(msg.channel, "Quantity too low!", "The number you entered must be 0 or greater.")
+                .then(r => userProg.last_error_msg = r);
         } else {
             lastItem.quantity = Number.parseFloat(msg.content);
             userProg.subject = InvoiceActionType.REVIEW_ITEM;
@@ -233,16 +247,27 @@ class InvoicingBot {
     }
 
     createCommands() {
-        const cmds = {
-            type: 1,
-            name: "create-invoice",
-            description: "Create a new GCNT PayPal Invoice",
-            default_member_permissions: "0",
-            dm_permission: false,
-        }
-
         try {
-            this.client.application.commands.create(cmds);
+            this.client.application.commands.create(new SlashCommandBuilder()
+                .setName("create-invoice")
+                .setDescription("Create a new PayPal Invoice")
+                .setDefaultMemberPermissions(0)
+                .setDMPermission(false));
+            this.client.application.commands.create(new SlashCommandBuilder()
+                .setName("lookup-transaction")
+                .setDescription("Lookup PayPal transaction details")
+                .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+                .setDMPermission(false)
+                .addStringOption(option => option
+                    .setName("email")
+                    .setDescription("The email address of the user to lookup")
+                    .setRequired(true)
+                )
+                .addStringOption(option => option
+                    .setName("date")
+                    .setDescription("The date of the transaction (YYYY-MM-DD)")
+                    .setRequired(false)
+                ));
         } catch (e) {
             console.log(e);
         }
@@ -579,7 +604,8 @@ class InvoicingBot {
         if (userProg.sent && invoiceId != null) {
             // deleting the old invoice message after 10 minutes of initial setup.
             setTimeout(() => {
-                this.history.get(invoiceId)?.message?.delete().catch(() => {});
+                this.history.get(invoiceId)?.message?.delete().catch(() => {
+                });
                 this.history.delete(invoiceId);
             }, 1000 * 60 * 10);
 
@@ -706,6 +732,8 @@ class InvoicingBot {
         if (interaction.isCommand()) {
             if (interaction.commandName === "create-invoice") {
                 this.sendNewInvoiceMessage(interaction);
+            } else if (interaction.commandName === "lookup-transaction") {
+                this.handleLookupTransactionCommand(interaction).catch(console.error);
             }
         } else if (interaction.isButton()) {
             if (interaction.customId === "cancel-new-invoice") {
@@ -854,18 +882,22 @@ class InvoicingBot {
 
     /**
      *
-     * @param {TextChannel} channel
+     * @param {TextChannel|BaseInteraction} context
      * @param {String} title
      * @param {String} description
      * @returns {Promise<*|null>}
      */
-    async sendErrorMessage(channel, title, description) {
+    async sendErrorMessage(context, title, description) {
         const embed = new EmbedBuilder()
             .setColor(this.getRedColor())
-            .setAuthor({name: title, iconURL: 'https://www.freeiconspng.com/uploads/red-circular-image-error-0.png'})
+            .setAuthor({name: title, iconURL: 'https://www.gcnt.net/inc/img/red-circle.png'})
             .setDescription(description);
 
-        const sent = await channel.send({embeds: [embed]});
+        if (context instanceof BaseInteraction) {
+            return await context.reply({embeds: [embed], ephemeral: true});
+        }
+
+        const sent = await context.send({embeds: [embed]});
         try {
             return sent;
         } catch (error) {
@@ -898,6 +930,55 @@ class InvoicingBot {
 
         channel.send(msgObj.contents);
     }
+
+    /**
+     * @param {CommandInteraction} interaction
+     */
+    async handleLookupTransactionCommand(interaction) {
+        const email = interaction.options.getString('email');
+        const date = interaction.options.getString('date');
+
+        const res = await lookupTransactions(email, date);
+
+        if (res.length === 0) {
+            this.sendErrorMessage(
+                interaction,
+                "No transactions found",
+                "No transactions found for the given email and date."
+            ).catch(console.error);
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor(this.getColor())
+            .setTitle("Transactions Lookup");
+        embed.setDescription(`Found ${res.length} transactions from \`${email}\` for the given period.`);
+
+        for (const transaction of res) {
+            try {
+                const emailAddress = transaction.payer_info.email_address;
+                const transactionAmount = transaction.transaction_info.transaction_amount.value;
+                const currencyCode = transaction.transaction_info.transaction_amount.currency_code;
+                const initialDate = `<t:${new Date(transaction.transaction_info.transaction_initiation_date).getTime() / 1000}>`;
+                const status = prettifyPayPalStatus(transaction.transaction_info.transaction_status);
+
+                const cartDetails = transaction.cart_info.item_details[0]?.item_name ?? "No cart details found";
+                const origin = getTransactionOrigin(transaction);
+
+                embed.addFields({
+                    name: `${status} ${emailAddress} | ${transactionAmount} ${currencyCode}`,
+                    value: `**Date:** ${initialDate}\n` +
+                        `**Origin:** ${origin}\n` +
+                        `**Item:** ${cartDetails}`
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        interaction.reply({embeds: [embed]});
+    }
+
 }
 
 module.exports = InvoicingBot;
