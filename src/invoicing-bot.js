@@ -1,4 +1,4 @@
-const {
+import {
     createDraft,
     getAccessToken,
     getItemField,
@@ -8,9 +8,9 @@ const {
     round,
     sendInvoice,
     sendRequest
-} = require("./paypal.js");
-const PaymentMessenger = require('./payment_messenger.js');
-const {
+} from "./paypal.js";
+import PaymentMessenger from './payment_messenger.js';
+import {
     ActionRowBuilder,
     AttachmentBuilder,
     BaseInteraction,
@@ -24,9 +24,6 @@ const {
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
     GatewayIntentBits,
-    ModalBuilder,
-    TextInputBuilder,
-    BaseSelectMenuBuilder,
     StringSelectMenuBuilder,
     StringSelectMenuOptionBuilder,
     StringSelectMenuInteraction,
@@ -34,10 +31,8 @@ const {
     ChannelSelectMenuInteraction,
     SlashCommandBuilder,
     PermissionsBitField,
-    SlashCommandSubcommandBuilder,
-    SlashCommandStringOption
-} = require("discord.js");
-const {getInvoice, lookupTransactions, prettifyPayPalStatus, getTransactionOrigin} = require("./paypal");
+} from "discord.js";
+import {getInvoice, lookupTransactions, prettifyPayPalStatus, getTransactionOrigin} from "./paypal.js";
 
 const InvoiceActionType = {
     CUSTOMER: "CUSTOMER",
@@ -50,7 +45,7 @@ const InvoiceActionType = {
     REVIEW_ITEM: "REVIEW_ITEM"
 }
 
-class InvoicingBot {
+export default class InvoicingBot {
 
     botLogo = "https://www.gcnt.net/inc/img/discord-finance-bot-logo.png";
     client;
@@ -59,6 +54,10 @@ class InvoicingBot {
     history = new Map();
 
     constructor() {
+        this.setupClient();
+    }
+
+    setupClient() {
         this.client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
@@ -72,6 +71,7 @@ class InvoicingBot {
         this.client.on('ready', () => {
             this.handleApplicationReady()
         });
+        this.client.on('invalidated', this.restart);
         this.client.on('messageCreate', async (message) => {
             this.handleMessageCreation(message).catch(console.error)
         });
@@ -80,6 +80,11 @@ class InvoicingBot {
         });
 
         this.client.login(process.env.CLIENT_TOKEN).catch(console.error);
+    }
+
+    restart() {
+        this.client.destroy();
+        setTimeout(() => this.setupClient(), 1000);
     }
 
     handleApplicationReady() {
@@ -980,5 +985,3 @@ class InvoicingBot {
     }
 
 }
-
-module.exports = InvoicingBot;

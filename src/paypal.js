@@ -1,6 +1,8 @@
-require('dotenv').config();
-const mysql = require('mysql');
-const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+import dotenv from "dotenv";
+import mysql from 'mysql';
+import {XMLHttpRequest} from "xmlhttprequest";
+
+dotenv.config({path: './.env'});
 const formatter = new Intl.NumberFormat('nl-NL', {
     style: 'currency',
     currency: 'EUR',
@@ -52,7 +54,6 @@ async function getAccessToken() {
         if (req.status === 200) {
             const json = JSON.parse(req.responseText);
             accessToken = json["access_token"];
-            console.log(accessToken)
             const expiresIn = json["expires_in"];
             setTimeout(getAccessToken, expiresIn * 900);
         }
@@ -272,18 +273,18 @@ function prettifyPayPalStatus(status) {
     }
 }
 
-module.exports = {
-    sendRequest: sendRequest,
-    getAccessToken: getAccessToken,
-    createDraft: createDraft,
-    sendInvoice: sendInvoice,
-    getQRCode: getQRCode,
-    round: round,
-    getItemField: getItemField,
-    getTotal: getTotal,
-    getPayPalUserInfo: getPayPalUserInfo,
-    getInvoice: getInvoice,
-    lookupTransactions: lookupTransactions,
-    prettifyPayPalStatus: prettifyPayPalStatus,
-    getTransactionOrigin: getTransactionOrigin
+export {
+    sendRequest,
+    getAccessToken,
+    createDraft,
+    sendInvoice,
+    getQRCode,
+    round,
+    getItemField,
+    getTotal,
+    getPayPalUserInfo,
+    getInvoice,
+    lookupTransactions,
+    prettifyPayPalStatus,
+    getTransactionOrigin
 }

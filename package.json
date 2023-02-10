@@ -1,10 +1,11 @@
 {
   "name": "finance-bot",
+  "type": "module",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js --trace-warnings"
+    "start": "node src/index.js --trace-warnings"
   },
   "keywords": [],
   "author": "",
@@ -12,7 +13,7 @@
   "dependencies": {
     "axios": "^0.24.0",
     "body-parser": "^1.20.0",
-    "discord-api-types": "^0.37.23",
+    "discord-api-types": "^0.37.32",
     "discord.js": "^14.7.1",
     "dotenv": "^10.0.0",
     "express": "^4.17.3",

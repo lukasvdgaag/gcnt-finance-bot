@@ -1,10 +1,12 @@
-const {MessageEmbed} = require("discord.js");
-const {round, sendRequest} = require("./paypal.js");
+import {round, sendRequest} from "./paypal.js";
 
-require('dotenv').config();
-const mysql = require('mysql');
+import dotenv from "dotenv";
+import mysql from 'mysql';
+import {EmbedBuilder} from "discord.js";
 
-class PaymentMessenger {
+dotenv.config({path: './.env'});
+
+export default class PaymentMessenger {
 
     #client;
 
@@ -79,35 +81,36 @@ class PaymentMessenger {
                 console.log("No transaction info");
                 return;
             }
-            console.log("Transaction info");
-            console.log(transactionInfo);
 
-            const emb = new MessageEmbed()
+            const emb = new EmbedBuilder()
                 .setColor(process.env.THEME_COLOR)
                 .setAuthor({name: 'Thanks for your purchase!', iconURL: 'https://www.gcnt.net/inc/img/discord-finance-bot-check.png'})
                 .setFooter({text: "Purchased through PayPal", iconURL: 'https://www.gcnt.net/inc/img/discord-finance-bot-logo.png'});
 
-            if (transactionInfo.plugin_title != null) emb.addField("Plugin", transactionInfo.plugin_title, true);
+            if (transactionInfo.plugin_title != null) emb.addFields({name: "Plugin", value: transactionInfo.plugin_title, inline: true});
 
             if (invoiceId != null) {
                 const invoiceInfo = await this.getInvoiceInfo(invoiceId);
-                console.log("invoiceInfo");
-                console.log(invoiceInfo);
                 if (invoiceInfo != null) {
-                    emb.addField("Invoice", invoiceId, false);
-                    emb.addField("Amount", round(transactionInfo.payment_amount) + " EUR", true);
+                    emb.addFields(
+                        {name: "Invoice", value: invoiceId, inline: false},
+                        {name: "Amount", value: round(transactionInfo.payment_amount) + " EUR", inline: true}
+                    );
                     const status = invoiceInfo.status;
 
                     if (status === "PAID" || status === "MARKED_AS_PAID") {
-                        emb.addField("Invoice Status", ":white_check_mark: Fully paid", true);
+                        emb.addFields({name: "Invoice Status", value: ":white_check_mark: Fully paid", inline: true});
                     } else {
                         const dueAmount = invoiceInfo.due_amount.value;
-
-                        emb.addField("Invoice Status", `:warning: The invoice is not fully paid yet. There is a remainder of ${round(dueAmount)} EUR.`, false);
+                        emb.addFields({
+                            name: "Invoice Status",
+                            value: ":warning: The invoice is not fully paid yet. There is a remainder of " + round(dueAmount) + " EUR.",
+                            inline: false
+                        });
                     }
                 }
             } else {
-                emb.addField("Price", round(transactionInfo.price) + " EUR", true);
+                emb.addFields({name: "Price", value: round(transactionInfo.price) + " EUR", inline: true});
             }
 
             console.log("sending message");
@@ -137,7 +140,7 @@ class PaymentMessenger {
                                     LEFT JOIN plugins p on mp.plugin_id = p.id
                            WHERE txnid = ?;`
                     , [transactionId],
-                    function (err, result, fields) {
+                    function (err, result) {
                         if (err) {
                             fail(err);
                             return;
@@ -160,7 +163,7 @@ class PaymentMessenger {
                 con.query(`SELECT discord
                            FROM users
                            WHERE id = ?;`, [userId],
-                    function (err, result, fields) {
+                    function (err, result) {
                         if (err) {
                             fail(err);
                             return;
@@ -171,5 +174,3 @@ class PaymentMessenger {
         });
     }
 }
-
-module.exports = PaymentMessenger;
