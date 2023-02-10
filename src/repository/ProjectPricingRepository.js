@@ -1,6 +1,6 @@
 import Repository from "./Repository.js";
 import ProjectRequestPricing from "../models/ticket/ProjectRequestPricing.js";
-import {uuid} from "uuidv4";
+import {v4 as uuid} from "uuid";
 
 export default class ProjectPricingRepository extends Repository {
 
@@ -12,7 +12,7 @@ export default class ProjectPricingRepository extends Repository {
      * @returns {Promise<ProjectRequestPricing>}
      */
     async createProjectPricing(ticket) {
-        await this.executeSQL(`INSERT INTO plugin_request_pricing (id, token, ticket) VALUES (?, ?, ?)`,
+        await this.executeSQL(`INSERT INTO project_request_pricing (id, token, ticket) VALUES (?, ?, ?)`,
             [uuid(), uuid(), ticket.id])
 
         return await this.fetchProjectPricingByTicketId(ticket.id);
@@ -24,7 +24,7 @@ export default class ProjectPricingRepository extends Repository {
      * @returns {Promise<ProjectRequestPricing>}
      */
     async fetchProjectPricingByTicketId(ticketId) {
-        const res = await this.executeSQL(`SELECT * FROM plugin_request_pricing WHERE ticket = ?`, [ticketId]);
+        const res = await this.executeSQL(`SELECT * FROM project_request_pricing WHERE ticket = ?`, [ticketId]);
         return ProjectRequestPricing.fromJson(res[0]);
     }
 

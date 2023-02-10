@@ -1,12 +1,10 @@
-import dotenv from "dotenv";
 import express from 'express';
 
-dotenv.config();
 const app = express();
 
 app.use(express.json());
 
-const PORT = 8081;
+const PORT = 3001;
 
 export default class HttpServer {
 

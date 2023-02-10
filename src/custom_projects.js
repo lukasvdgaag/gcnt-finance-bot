@@ -1,4 +1,3 @@
-import dotenv from "dotenv";
 import {
     ActionRowBuilder,
     ButtonBuilder,
@@ -19,8 +18,6 @@ import PluginRates from "./models/ticket/PluginRates.js";
 import TicketRepository from "./repository/TicketRepository.js";
 import Ticket from "./models/ticket/Ticket.js";
 import ProjectPricingRepository from "./repository/ProjectPricingRepository.js";
-
-dotenv.config();
 
 export default class CustomProjects {
 
@@ -65,7 +62,6 @@ export default class CustomProjects {
         });
 
         const token = process.env.CLIENT_TOKEN_CUSTOM_PROJECTS;
-        console.log("token:", token)
         await this.client.login(token); //login bot using token
     }
 
@@ -81,7 +77,7 @@ export default class CustomProjects {
     async handleCommand(interaction) {
         if (interaction.commandName !== "order") return;
 
-        const subcommand = interaction.options.getSubcomand(false);
+        const subcommand = interaction.options.getSubcommand(false);
         switch (subcommand) {
             case "create":
                 await this.openTicket(interaction);
@@ -173,8 +169,7 @@ export default class CustomProjects {
             return;
         }
 
-        const member = await interaction.guild.members.fetch(user.id);
-        if (this.isAdmin(member)) {
+        if (this.isAdmin(this.getGuildMember(user))) {
             await this.replyEmbedWithAutoDelete(interaction, "That's a staff member!", "You can't remove staff members from this order.", "#f54257")
             return;
         }
@@ -220,7 +215,7 @@ export default class CustomProjects {
     revokeAccess(channel) {
         channel.permissionOverwrites.cache.forEach(async (value, user) => {
             if (value.type === OverwriteType.Member) {
-                await channel.permissionOverwrites.edit(await this.client.users.fetch(user, {force: true}), {
+                await channel.permissionOverwrites.edit(await this.client.users.fetch(user, {force: true}).catch(console.error), {
                     'AddReactions': true,
                     'AttachFiles': true,
                     'ReadMessageHistory': true,
@@ -240,7 +235,7 @@ export default class CustomProjects {
         const ticket = await TicketRepository.shared.fetchTicketByChannelId(interaction.channelId);
         if (!ticket) return;
 
-        if (this.isAdmin(this.getGuildMember(interaction.user)) || approve == null) {
+        if (!this.isAdmin(this.getGuildMember(interaction.user)) || approve == null) {
             await this.replyEmbedWithAutoDelete(interaction, "Order closed!", `${interaction.user} has closed the order.`, "#f58a42", false, false);
 
             this.revokeAccess(interaction.channel);
@@ -248,7 +243,7 @@ export default class CustomProjects {
             ticket.status = TicketStatus.Closed;
             await TicketRepository.shared.updateTicket(ticket);
 
-            await interaction.channel.setName(`order-${ticket.id}-closed`);
+            await interaction.channel.setName(`ticket-${ticket.id}-closed`);
             TicketRepository.shared.removeCachedTicket(ticket);
             return;
         }
@@ -256,8 +251,10 @@ export default class CustomProjects {
         // revoking access to the channel when an admin denies the ticket.
         if (!approve) {
             this.revokeAccess(interaction.channel);
-            await interaction.channel.setName(`order-${ticket.id}-closed`);
+            await interaction.channel.setName(`ticket-${ticket.id}-closed`);
             TicketRepository.shared.removeCachedTicket(ticket);
+        } else {
+            await interaction.channel.setName(`ticket-${ticket.id}`);
         }
 
         ticket.status = approve ? TicketStatus.Approved : TicketStatus.Denied;
@@ -271,7 +268,7 @@ export default class CustomProjects {
     }
 
     async createCommands() {
-        const cmds = {
+        const cmds = [{
             type: 1,
             name: 'order',
             description: 'Create a new custom project request order ticket.',
@@ -321,9 +318,9 @@ export default class CustomProjects {
                     ]
                 },
             ]
-        };
+        }];
 
-        this.client.application.commands.create(cmds)
+        this.client.application.commands.set(cmds)
             .catch(console.log);
     }
 
@@ -357,7 +354,7 @@ export default class CustomProjects {
     async handleChatMessage(message) {
         if ((message.channel.parentId === this.categoryId && message.type === MessageType.ChannelPinnedMessage) ||
             (message.channel.id === this.orderFromUsChannelId && !message.author.bot)) {
-            message.delete().catch(console.error);
+            if (message?.deletable) message.delete().catch(console.error);
             return;
         }
         if (message.author.bot) return;
@@ -367,6 +364,7 @@ export default class CustomProjects {
         }
 
         const ticket = await TicketRepository.shared.fetchTicketByChannelId(message.channel.id);
+        console.log('ticket found', ticket)
         if (!ticket || ticket.setup_status === SetupStatus.Submitted) {
             return;
         }
@@ -409,17 +407,18 @@ export default class CustomProjects {
             await TicketRepository.shared.updateTicket(ticket);
         } else if (ticket.setup_status === SetupStatus.EnterDeadline) {
             if (message?.deletable) message.delete().catch(console.error);
-            this.handleDeadlineSetting(message.channel, message.content).catch(console.error);
+            this.handleDeadlineSetting(message, message.content).catch(console.error);
         } else if (ticket.setup_status === SetupStatus.EnterProjectDescription) {
             if (message?.deletable) message.delete().catch(console.error);
+
+            this.deleteLastMessage(ticket, message.channel).catch(console.error);
 
             ticket.description = message.content;
             ticket.setup_status = SetupStatus.Submitted;
             ticket.last_discord_message = null;
-            await TicketRepository.shared.updateTicket(ticket);
 
+            await TicketRepository.shared.updateTicket(ticket);
             await this.sendSummary(message.channel);
-            this.deleteLastMessage(ticket, message.channel).catch(console.error);
 
             const embed = this.getEmbed(`:white_check_mark:  Thanks for answering the questions!`, "We will get back to you as soon as possible.");
             message.channel.send({content: `<@&${process.env.ADMIN_ROLE_ID}>`, embeds: [embed]});
@@ -436,7 +435,7 @@ export default class CustomProjects {
         if (ticket.last_discord_message == null) return;
 
         try {
-            const previousMsg = await channel.messages.fetch(ticket.last_discord_message);
+            const previousMsg = await channel.messages.fetch(ticket.last_discord_message).catch(console.error);
             if (previousMsg?.deletable) previousMsg?.delete().catch(console.error);
         } catch (e) {
             console.log(e);
@@ -452,7 +451,7 @@ export default class CustomProjects {
         let ticket = await TicketRepository.shared.fetchTicketByChannelId(channel.id);
         if (!ticket) return;
 
-        const embed = this.getEmbed(`Project Summary`, "Here is a summary of the information that you entered about this project.");
+        const embed = this.getEmbed('Project Summary', "Here is a summary of the information that you entered about this project.");
         embed.addFields(
             {name: "Project Name", value: ticket.name ?? ":no_entry_sign:  No project name entered", inline: true},
             {name: "Deadline", value: ticket.deadline ?? ":infinity: I have no deadline", inline: true},
@@ -466,7 +465,7 @@ export default class CustomProjects {
 
     /**
      * Handles the deadline setting
-     * @param {ButtonInteraction} interaction The interaction
+     * @param {ButtonInteraction|Message} interaction The interaction
      * @param value
      * @returns {Promise<void>}
      */
@@ -482,7 +481,7 @@ export default class CustomProjects {
         ticket.deadline = value;
         ticket.setup_status = SetupStatus.EnterProjectDescription;
 
-        const embed = this.getEmbed(`Please describe your project in as much detail as possible.`, null);
+        const embed = this.getEmbed('Please describe your project in as much detail as possible.', null);
 
         this.deleteLastMessage(ticket, interaction.channel).catch(console.error);
 
@@ -525,7 +524,7 @@ export default class CustomProjects {
             await this.giveUserPermission(createdChannel, interaction.user);
 
             await this.replyEmbedWithAutoDelete(interaction, "Ticket created!", `Ticket with channel <#${createdChannel.id}> has been created!`, "#46d846", true, false);
-            this.sendFirstTicketMessage(await createdChannel.fetch(true), interaction.user).catch(console.error);
+            this.sendFirstTicketMessage(await createdChannel.fetch(true).catch(console.error), interaction.user).catch(console.error);
         } catch (e) {
             console.error(e);
             const msg = "Something went wrong. Please try again later.";
@@ -541,7 +540,7 @@ export default class CustomProjects {
         // create new UUID
         try {
             const pricing = await ProjectPricingRepository.shared.createProjectPricing(ticket);
-            if (pricing) return `${process.env.WEBSITE_URL}/pricing?id=${encodeURIComponent(pricing.id)}&token=${encodeURIComponent(pricing.id)}&ticket_id=${pricing.ticket}`;
+            if (pricing) return `${process.env.WEBSITE_URL}/pricing?id=${encodeURIComponent(pricing.id)}&token=${encodeURIComponent(pricing.token)}&ticket_id=${pricing.ticket}`;
         } catch (e) {
             console.error(e);
         }
@@ -552,10 +551,10 @@ export default class CustomProjects {
         const ticket = await TicketRepository.shared.fetchTicketById(body.ticket_id);
         if (!ticket) return;
 
-        const channel = await this.client.channels.fetch(ticket.discord_channel_id);
+        const channel = await this.client.channels.fetch(ticket.discord_channel_id).catch(console.error);
         if (!channel) return;
 
-        const pricingMessage = await channel.messages.fetch(ticket.last_discord_message);
+        const pricingMessage = await channel.messages.fetch(ticket.last_discord_message).catch(console.error);
         if (pricingMessage && pricingMessage?.deletable) pricingMessage.delete().catch(console.error);
 
         const pricingEmbed = this.getEmbed("Pricing Summary", "Here is a summary of the pricing options that you selected for this project.");
@@ -615,6 +614,7 @@ export default class CustomProjects {
 
         sentMsg.pin().catch(console.error);
 
+        console.log('Updating ticket status to EnterName');
         ticket.setup_status = SetupStatus.EnterName;
         ticket.last_discord_message = sentMsg.id;
         await TicketRepository.shared.updateTicket(ticket);
@@ -638,10 +638,10 @@ export default class CustomProjects {
 
         const embed = this.getEmbed(
             "Welcome to your custom project ticket!",
-            `Hello <@${user.id}>,\n\n
-            Welcome to your custom project ticket with id #${ticket}!\n
-            We will be asking you a couple of questions regarding your request.\n\n
-            ***Please note that you can __not__ send messages in this channel until you have completed the setup process.***`
+            `Hello <@${user.id}>,\n\n` +
+            `Welcome to your custom project ticket with id #${ticket.id}!\n` +
+            "We will be asking you a couple of questions regarding your request.\n\n" +
+            "***Please note that you __cannot__ send messages in this channel until you have completed the setup process.***"
         );
 
         await channel.send({content: `<@${user.id}>`, embeds: [embed]});
@@ -659,18 +659,18 @@ export default class CustomProjects {
     }
 
     async sendFirstMessage() {
-        const channel = await this.client.channels.fetch(this.orderFromUsChannelId);
+        const channel = await this.client.channels.fetch(this.orderFromUsChannelId).catch(console.error);
 
-        const pinnedMessages = await channel.messages.fetchPinned(false);
+        const pinnedMessages = await channel.messages.fetchPinned(false).catch(console.error);
         if (pinnedMessages.size !== 0) return;
 
         const embed = this.getEmbed(
             "Open a custom project ticket!",
-            `**Need a custom project developed specifically for you?**\n
-            Click the button below to open a ticket and answer a few questions to get started.
-            Our team is dedicated to delivering high-quality solutions and we're here to help bring your vision to life.\n
-            Let's work together to make your project a reality!\n
-            *Click the button below to get started!*`
+            "**Do you have a project in mind but need talented developers to bring it to life?**\n\n" +
+            "Click the button below to open a ticket and answer a few questions to get started. " +
+            "Our team is dedicated to delivering high-quality solutions and we're here to help bring your vision to life.\n\n" +
+            "Let's work together to make your project a reality!\n\n" +
+            "*Click the button to start chatting with us!*"
         );
 
         const actionRow = new ActionRowBuilder()

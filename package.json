@@ -1,26 +1,22 @@
 {
   "name": "finance-bot",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js --trace-warnings"
   },
   "keywords": [],
-  "author": "",
+  "author": "Devmart",
   "license": "ISC",
   "dependencies": {
-    "axios": "^0.24.0",
-    "body-parser": "^1.20.0",
     "discord-api-types": "^0.37.32",
     "discord.js": "^14.7.1",
     "dotenv": "^10.0.0",
     "express": "^4.17.3",
     "mysql": "^2.18.1",
-    "xhr": "^2.6.0",
-    "xhr-request": "^1.1.0",
-    "xmlhttprequest": "^1.8.0",
-    "uuidv4": "^6.2.13"
+    "uuid": "^9.0.0",
+    "xmlhttprequest": "^1.8.0"
   }
 }

@@ -1,10 +1,14 @@
 import {
     createDraft,
     getAccessToken,
+    getInvoice,
     getItemField,
     getPayPalUserInfo,
     getQRCode,
     getTotal,
+    getTransactionOrigin,
+    lookupTransactions,
+    prettifyPayPalStatus,
     round,
     sendInvoice,
     sendRequest
@@ -16,23 +20,22 @@ import {
     BaseInteraction,
     ButtonBuilder,
     ButtonInteraction,
+    ChannelSelectMenuBuilder,
+    ChannelSelectMenuInteraction,
     Client,
     CommandInteraction,
     EmbedBuilder,
+    GatewayIntentBits,
     Message,
+    PermissionsBitField,
+    SlashCommandBuilder,
+    StringSelectMenuBuilder,
+    StringSelectMenuInteraction,
+    StringSelectMenuOptionBuilder,
     TextChannel,
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
-    GatewayIntentBits,
-    StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder,
-    StringSelectMenuInteraction,
-    ChannelSelectMenuBuilder,
-    ChannelSelectMenuInteraction,
-    SlashCommandBuilder,
-    PermissionsBitField,
 } from "discord.js";
-import {getInvoice, lookupTransactions, prettifyPayPalStatus, getTransactionOrigin} from "./paypal.js";
 
 const InvoiceActionType = {
     CUSTOMER: "CUSTOMER",
@@ -124,7 +127,8 @@ export default class InvoicingBot {
             this.userProgress.delete(msg.author.id);
 
             const error = await this.sendErrorMessage(msg.channel, "Invoice cancelled!", "Your current PayPal Invoice Setup has been discarded.");
-            setTimeout(() => error.delete().catch(() => {}), 8000);
+            setTimeout(() => error.delete().catch(() => {
+            }), 8000);
             return;
         }
 
@@ -251,14 +255,15 @@ export default class InvoicingBot {
         userProg.subject = InvoiceActionType.ADD_ITEMS;
     }
 
-    createCommands() {
+    async createCommands() {
         try {
-            this.client.application.commands.create(new SlashCommandBuilder()
+            await this.client.application.commands.set([]);
+            await this.client.application.commands.create(new SlashCommandBuilder()
                 .setName("create-invoice")
                 .setDescription("Create a new PayPal Invoice")
                 .setDefaultMemberPermissions(0)
                 .setDMPermission(false));
-            this.client.application.commands.create(new SlashCommandBuilder()
+            await this.client.application.commands.create(new SlashCommandBuilder()
                 .setName("lookup-transaction")
                 .setDescription("Lookup PayPal transaction details")
                 .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
