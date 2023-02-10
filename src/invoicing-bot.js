@@ -79,7 +79,7 @@ export default class InvoicingBot {
             this.handleInteraction(interaction).catch(console.error);
         });
 
-        this.client.login(process.env.CLIENT_TOKEN).catch(console.error);
+        this.client.login(process.env.CLIENT_TOKEN_INVOICING).catch(console.error);
     }
 
     restart() {

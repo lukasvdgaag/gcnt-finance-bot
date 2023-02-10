@@ -16,17 +16,17 @@ import {ButtonStyle, ChannelType, MessageType, OverwriteType} from "discord-api-
 import TicketStatus from "./models/ticket/TicketStatus.js";
 import SetupStatus from "./models/ticket/TicketSetupStatus.js";
 import PluginRates from "./models/ticket/PluginRates.js";
-import Ticket from "./models/ticket/Ticket.js";
 import TicketRepository from "./repository/TicketRepository.js";
+import Ticket from "./models/ticket/Ticket.js";
+import ProjectPricingRepository from "./repository/ProjectPricingRepository.js";
 
-dotenv.config({path: './.env'});
+dotenv.config();
 
 export default class CustomProjects {
 
     client; //create new client
     orderFromUsChannelId = '965377410335924295';
     categoryId = '965377119423197184';
-    ticketInfo = new Map();
 
     constructor() {
         this.setupClient().then();
@@ -64,46 +64,14 @@ export default class CustomProjects {
             }
         });
 
-        await this.client.login(process.env.CLIENT_TOKEN_CUSTOM_PROJECTS); //login bot using token
+        const token = process.env.CLIENT_TOKEN_CUSTOM_PROJECTS;
+        console.log("token:", token)
+        await this.client.login(token); //login bot using token
     }
 
     restart() {
         this.client.destroy();
         setTimeout(() => this.setupClient(), 1000);
-    }
-
-    async getCachedTicketFromChannel(channelId, isTicketId = false) {
-        for (let [key, value] of this.ticketInfo) {
-            if ((value.channelId === channelId) || (isTicketId && key === channelId)) {
-                if (value.setupStatus !== SetupStatus.Submitted) break;
-                return value;
-            }
-        }
-
-        const sqlRes = await this.executeSQL(`SELECT *
-                                              FROM plugin_request_ticket
-                                              WHERE ${isTicketId ? "id" : "discord_channel_id"} = ?`, [channelId]);
-        if (sqlRes == null || sqlRes.length === 0) return null;
-        else {
-            const ticket = Ticket.fromJson(sqlRes[0]);
-
-            const ticketObject = {
-                ticketId: ticket.id,
-                id: ticket.id,
-                requester: ticket.requester,
-                description: ticket.plugin_description,
-                setupStatus: ticket.setup_status,
-                status: ticket.status,
-                createdAt: ticket.created_at,
-                updatedAt: ticket.updated_at,
-                channelId: ticket.discord_channel_id,
-                serverName: ticket.server_name,
-                deadline: ticket.deadline,
-                lastMessageId: ticket.last_discord_message
-            };
-            this.ticketInfo.set(ticket.id, ticket);
-            return ticketObject;
-        }
     }
 
     /**
@@ -163,7 +131,7 @@ export default class CustomProjects {
         }
 
         if (interaction.user.id === user.id) {
-            await this.replyEmbedWithAutoDelete(interaction, "That's you!", "You can't add yourself to this order since you already have access.", "#f54257");
+            await this.replyEmbedWithAutoDelete(interaction, "That's you!", "You can't add yourself to this order since you already have access.", "#f54257", true, false);
             return;
         }
 
@@ -272,24 +240,28 @@ export default class CustomProjects {
         const ticket = await TicketRepository.shared.fetchTicketByChannelId(interaction.channelId);
         if (!ticket) return;
 
-        if (this.isAdmin(interaction.user) || approve == null) {
+        if (this.isAdmin(this.getGuildMember(interaction.user)) || approve == null) {
             await this.replyEmbedWithAutoDelete(interaction, "Order closed!", `${interaction.user} has closed the order.`, "#f58a42", false, false);
 
             this.revokeAccess(interaction.channel);
-            await this.executeSQL("UPDATE plugin_request_ticket SET status = ? WHERE discord_channel_id = ?", [TicketStatus.Closed, interaction.channelId]);
 
-            interaction.channel.setName(`order-${ticketId[0].id}-closed`);
-            this.ticketInfo.delete(ticketId[0].id);
+            ticket.status = TicketStatus.Closed;
+            await TicketRepository.shared.updateTicket(ticket);
+
+            await interaction.channel.setName(`order-${ticket.id}-closed`);
+            TicketRepository.shared.removeCachedTicket(ticket);
             return;
         }
 
         // revoking access to the channel when an admin denies the ticket.
         if (!approve) {
             this.revokeAccess(interaction.channel);
-            interaction.channel.setName(`order-${ticketId[0].id}-closed`);
-            this.ticketInfo.delete(ticketId[0].id);
+            await interaction.channel.setName(`order-${ticket.id}-closed`);
+            TicketRepository.shared.removeCachedTicket(ticket);
         }
-        await this.executeSQL("UPDATE plugin_request_ticket SET status = ? WHERE discord_channel_id = ?", [approve ? TicketStatus.Approved : TicketStatus.Denied, interaction.channelId]);
+
+        ticket.status = approve ? TicketStatus.Approved : TicketStatus.Denied;
+        await TicketRepository.shared.updateTicket(ticket);
 
         await this.replyEmbedWithAutoDelete(interaction,
             `Order ${approve ? "approved" : "denied"}!`,
@@ -302,22 +274,22 @@ export default class CustomProjects {
         const cmds = {
             type: 1,
             name: 'order',
-            description: 'Create a new order for ordering a custom plugin.',
+            description: 'Create a new custom project request order ticket.',
             options: [
                 {
                     type: 1,
                     name: 'create',
-                    description: 'Open a new custom plugin ordering order.',
+                    description: 'Open a new custom project request ticket.',
                 },
                 {
                     type: 1,
                     name: 'close',
-                    description: 'Close the current custom plugin ordering order.',
+                    description: 'Close the current custom project request ticket.',
                     options: [
                         {
                             type: 5,
                             name: 'approve',
-                            description: 'Whether to approve the request (Admins) .',
+                            description: 'Whether to approve the request (Admins).',
                             required: false,
                         }
                     ]
@@ -325,7 +297,7 @@ export default class CustomProjects {
                 {
                     type: 1,
                     name: 'adduser',
-                    description: 'Add another user to the current custom plugin ordering order.',
+                    description: 'Add another user to the current custom project request ticket.',
                     options: [
                         {
                             type: 6,
@@ -338,7 +310,7 @@ export default class CustomProjects {
                 {
                     type: 1,
                     name: 'removeuser',
-                    description: 'Remove a user from the current custom plugin ordering order.',
+                    description: 'Remove a user from the current custom project request ticket.',
                     options: [
                         {
                             type: 6,
@@ -394,22 +366,22 @@ export default class CustomProjects {
             return;
         }
 
-        const ticketInfo = await this.getCachedTicketFromChannel(message.channel.id);
-        if (ticketInfo == null || ticketInfo.setupStatus === SetupStatus.Submitted) {
+        const ticket = await TicketRepository.shared.fetchTicketByChannelId(message.channel.id);
+        if (!ticket || ticket.setup_status === SetupStatus.Submitted) {
             return;
         }
 
-        if (ticketInfo.setupStatus === SetupStatus.Budgeting) {
+        if (ticket.setup_status === SetupStatus.Budgeting) {
             if (!this.isAdmin(message.member)) {
                 if (message?.deletable) message.delete().catch(console.error);
             }
             return;
         }
 
-        if (ticketInfo.setupStatus === SetupStatus.EnterServerName) {
-            message.delete().catch(console.error);
-            if (message.content.length > 35) {
-                const embed = this.getEmbed("Server name too long", "The server name that you entered is too long. Please enter a server name with less than 35 characters", "#f54257");
+        if (ticket.setup_status === SetupStatus.EnterName) {
+            if (message?.deletable) message.delete().catch(console.error);
+            if (message.content.length > 255) {
+                const embed = this.getEmbed("Project name too long", "The project name that you entered is too long. Please enter a project name with less than 255 characters", "#f54257");
                 const sent = await message.channel.send({embeds: [embed]});
                 setTimeout(() => {
                     if (sent?.deletable) sent.delete();
@@ -417,9 +389,8 @@ export default class CustomProjects {
                 return;
             }
 
-            ticketInfo.setupStatus = SetupStatus.EnterDeadline;
-            ticketInfo.serverName = message.content;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'server_name', message.content, SetupStatus.EnterDeadline).catch(console.error);
+            ticket.setup_status = SetupStatus.EnterDeadline;
+            ticket.name = message.content;
 
             const embed = this.getEmbed(`When is the deadline for this product?`, null);
             const interactions = new ActionRowBuilder().addComponents(
@@ -430,55 +401,62 @@ export default class CustomProjects {
                     .setEmoji('♾️')
             );
 
-            this.deleteLastMessage(ticketInfo, message.channel).catch(console.error);
+            this.deleteLastMessage(ticket, message.channel).catch(console.error);
 
             const sent = await message.channel.send({embeds: [embed], components: [interactions]});
-            ticketInfo.lastMessageId = sent.id;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id).catch(console.error);
-        } else if (ticketInfo.setupStatus === SetupStatus.EnterDeadline) {
+            ticket.last_discord_message = sent.id;
+
+            await TicketRepository.shared.updateTicket(ticket);
+        } else if (ticket.setup_status === SetupStatus.EnterDeadline) {
             if (message?.deletable) message.delete().catch(console.error);
             this.handleDeadlineSetting(message.channel, message.content).catch(console.error);
-        } else if (ticketInfo.setupStatus === SetupStatus.EnterProjectDescription) {
+        } else if (ticket.setup_status === SetupStatus.EnterProjectDescription) {
             if (message?.deletable) message.delete().catch(console.error);
 
-            ticketInfo.description = message.content;
-            ticketInfo.setupStatus = SetupStatus.Submitted;
-            await this.setTicketSQLValue(ticketInfo.ticketId, 'plugin_description', message.content, SetupStatus.Submitted);
+            ticket.description = message.content;
+            ticket.setup_status = SetupStatus.Submitted;
+            ticket.last_discord_message = null;
+            await TicketRepository.shared.updateTicket(ticket);
 
-            await this.sendSummary(message.channel, ticketInfo.ticketId);
+            await this.sendSummary(message.channel);
+            this.deleteLastMessage(ticket, message.channel).catch(console.error);
 
             const embed = this.getEmbed(`:white_check_mark:  Thanks for answering the questions!`, "We will get back to you as soon as possible.");
-
-            this.deleteLastMessage(ticketInfo, message.channel).catch(console.error);
-
-            delete ticketInfo.lastMessageId;
-            this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', null).catch(console.error);
-
             message.channel.send({content: `<@&${process.env.ADMIN_ROLE_ID}>`, embeds: [embed]});
         }
     }
 
-    async deleteLastMessage(ticketInfo, channel) {
-        if (ticketInfo.lastMessageId == null) return;
+    /**
+     * Delete the last message sent by the bot in the channel
+     * @param {Ticket} ticket
+     * @param {TextChannel} channel
+     * @returns {Promise<void>}
+     */
+    async deleteLastMessage(ticket, channel) {
+        if (ticket.last_discord_message == null) return;
 
         try {
-            const previousMsg = await channel.messages.fetch(ticketInfo.lastMessageId);
+            const previousMsg = await channel.messages.fetch(ticket.last_discord_message);
             if (previousMsg?.deletable) previousMsg?.delete().catch(console.error);
         } catch (e) {
             console.log(e);
         }
     }
 
+    /**
+     * Send a summary of the ticket to the channel
+     * @param {TextChannel} channel
+     * @returns {Promise<void>}
+     */
     async sendSummary(channel) {
-        let ticketInfo = await this.getCachedTicketFromChannel(channel.id);
-        if (ticketInfo == null) return;
+        let ticket = await TicketRepository.shared.fetchTicketByChannelId(channel.id);
+        if (!ticket) return;
 
         const embed = this.getEmbed(`Project Summary`, "Here is a summary of the information that you entered about this project.");
-        embed.addFields()
         embed.addFields(
-            {name: "Server Name", value: ticketInfo.serverName ?? ":no_entry_sign:  No server name entered", inline: true},
-            {name: "Deadline", value: ticketInfo.deadline ?? ":infinity: I have no deadline", inline: true},
-            {name: "Project Description", value: ticketInfo.description ?? ":no_entry_sign:  No project description entered", inline: false}
+            {name: "Project Name", value: ticket.name ?? ":no_entry_sign:  No project name entered", inline: true},
+            {name: "Deadline", value: ticket.deadline ?? ":infinity: I have no deadline", inline: true},
+            {name: "Project Description", value: ticket.description ?? ":no_entry_sign:  No project description entered", inline: false}
         );
         embed.setFooter({text: 'If you have any additional information, please use this channel to communicate with us.'});
 
@@ -493,62 +471,25 @@ export default class CustomProjects {
      * @returns {Promise<void>}
      */
     async handleDeadlineSetting(interaction, value) {
-        const ticketInfo = await this.getCachedTicketFromChannel(interaction.channel.id);
-        if (ticketInfo == null) return;
+        const ticket = await TicketRepository.shared.fetchTicketByChannelId(interaction.channel.id);
+        if (ticket == null) return;
 
         if (value != null && value.length > 256) {
             await this.replyEmbedWithAutoDelete(interaction, "Deadline is too long", "The deadline that you entered is too long. Please enter a deadline that is less than 256 characters.", "#f54257");
             return;
         }
 
-        ticketInfo.deadline = value;
-        ticketInfo.setupStatus = SetupStatus.EnterProjectDescription;
-        this.setTicketSQLValue(ticketInfo.ticketId, 'deadline', value, SetupStatus.EnterProjectDescription).catch(console.error);
+        ticket.deadline = value;
+        ticket.setup_status = SetupStatus.EnterProjectDescription;
 
         const embed = this.getEmbed(`Please describe your project in as much detail as possible.`, null);
 
-        this.deleteLastMessage(ticketInfo, interaction.channel).catch(console.error);
+        this.deleteLastMessage(ticket, interaction.channel).catch(console.error);
 
         const sent = await interaction.channel.send({embeds: [embed]});
-        ticketInfo.lastMessageId = sent.id;
-        this.setTicketSQLValue(ticketInfo.ticketId, 'last_discord_message', sent.id, null).catch(console.error);
-    }
+        ticket.last_discord_message = sent.id;
 
-    /**
-     * Change the value of a ticket.
-     * @param ticketId {string} The id of the ticket.
-     * @param key {string} The name of the MySQL table column to alter its value.
-     * @param value The new value of the column.
-     * @param setupStatus {null|string} The current setup status. Set to null to keep the current status.
-     * @returns {Promise<null|array>}
-     */
-    setTicketSQLValue(ticketId, key, value, setupStatus = null) {
-        const clas = this;
-        return new Promise(async function (ok, fail) {
-            const con = clas.#getConnection();
-            con.connect(function (err) {
-                if (err) {
-                    fail(err);
-                    return;
-                }
-
-                let statusPart = "";
-                if (setupStatus != null) {
-                    statusPart = `, setup_status = '${setupStatus}'`
-                }
-
-                con.query(`UPDATE plugin_request_ticket
-                           SET ${key} = ? ${statusPart}
-                           WHERE id = ?`, [value, ticketId],
-                    function (err, result) {
-                        if (err) {
-                            fail(err);
-                            return;
-                        }
-                        ok(result ?? null);
-                    });
-            });
-        });
+        await TicketRepository.shared.updateTicket(ticket);
     }
 
     async openTicket(interaction) {
@@ -562,23 +503,29 @@ export default class CustomProjects {
                 return;
             }
 
-            const number = (Math.random() * 100).toString();
-            const created = await guild.channels.create({
-                name: "ticket-" + number,
+            const createdTicket = await TicketRepository.shared.createTicket(
+                new Ticket(interaction.user.id)
+            );
+
+            const createdChannel = await guild.channels.create({
+                name: `ticket-${createdTicket.id}`,
                 type: ChannelType.GuildText,
                 parent: this.categoryId,
-                topic: `Custom plugin ticket for ${interaction.user.username}.`
+                topic: `Custom project ticket for ${interaction.user.username}.`
             });
-            await created.permissionOverwrites.edit(guild.roles.everyone, {
+            await createdChannel.permissionOverwrites.edit(guild.roles.everyone, {
                 'ViewChannel': false,
                 'SendMessages': false,
                 'ReadMessageHistory': false
             });
 
-            await this.giveUserPermission(created, interaction.user);
+            createdTicket.discord_channel_id = createdChannel.id;
+            await TicketRepository.shared.updateTicket(createdTicket);
 
-            await this.replyEmbedWithAutoDelete(interaction, "Ticket created!", `Ticket with channel <#${created.id}> has been created!`, "#00ff00", true);
-            this.sendFirstTicketMessage(await created.fetch(true), interaction.user).catch(console.error);
+            await this.giveUserPermission(createdChannel, interaction.user);
+
+            await this.replyEmbedWithAutoDelete(interaction, "Ticket created!", `Ticket with channel <#${createdChannel.id}> has been created!`, "#46d846", true, false);
+            this.sendFirstTicketMessage(await createdChannel.fetch(true), interaction.user).catch(console.error);
         } catch (e) {
             console.error(e);
             const msg = "Something went wrong. Please try again later.";
@@ -590,29 +537,11 @@ export default class CustomProjects {
         }
     }
 
-    async createTicket(channelId, userId) {
-        return this.executeSQL(`INSERT INTO plugin_request_ticket (requester_discord_id, discord_channel_id)
-                                VALUES (?, ?)`, [userId, channelId]);
-    }
-
-    createToken(length) {
-        let result = '';
-        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.=';
-        const charactersLength = characters.length;
-        for (let i = 0; i < length; i++) {
-            result += characters.charAt(Math.floor(Math.random() *
-                charactersLength));
-        }
-        return result;
-    }
-
     async createPricingLink(ticket) {
-        const id = this.createToken(32);
-        const token = this.createToken(32);
+        // create new UUID
         try {
-            const pricing = await this.executeSQL(`INSERT INTO plugin_request_pricing (id, token, ticket)
-                                                   VALUES (?, ?, ?)`, [id, token, ticket]);
-            if (pricing != null) return `${process.env.WEBSITE_URL}/new-pricing?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}&ticket_id=${ticket}`;
+            const pricing = await ProjectPricingRepository.shared.createProjectPricing(ticket);
+            if (pricing) return `${process.env.WEBSITE_URL}/pricing?id=${encodeURIComponent(pricing.id)}&token=${encodeURIComponent(pricing.id)}&ticket_id=${pricing.ticket}`;
         } catch (e) {
             console.error(e);
         }
@@ -620,23 +549,19 @@ export default class CustomProjects {
     }
 
     async handlePricingUpdate(pricingId, ticketId, body) {
-        const currentTicketInfo = await this.getCachedTicketFromChannel(body.ticket_id, true);
-        if (currentTicketInfo == null) {
-            return;
-        }
+        const ticket = await TicketRepository.shared.fetchTicketById(body.ticket_id);
+        if (!ticket) return;
 
-        const channel = await this.client.channels.fetch(currentTicketInfo.channelId);
-        if (channel == null) {
-            return;
-        }
+        const channel = await this.client.channels.fetch(ticket.discord_channel_id);
+        if (!channel) return;
 
-        const pricingMessage = await channel.messages.fetch(currentTicketInfo.lastMessageId);
+        const pricingMessage = await channel.messages.fetch(ticket.last_discord_message);
         if (pricingMessage && pricingMessage?.deletable) pricingMessage.delete().catch(console.error);
 
         const pricingEmbed = this.getEmbed("Pricing Summary", "Here is a summary of the pricing options that you selected for this project.");
         const typeRate = PluginRates.type[body.type].rate;
         pricingEmbed.addFields({
-            name: "Plugin type",
+            name: "Project type",
             value: `${PluginRates.descriptions[body.type]} - ${typeRate} EUR / hour\n${PluginRates.type[body.type].description}`,
             inline: true
         });
@@ -685,14 +610,14 @@ export default class CustomProjects {
 
         channel.send({embeds: [pricingEmbed]});
 
-        const embed = this.getEmbed("What is the name of your server?", null);
+        const embed = this.getEmbed("What is the name of your project?", null);
         const sentMsg = await channel.send({embeds: [embed]});
 
         sentMsg.pin().catch(console.error);
 
-        currentTicketInfo.setupStatus = SetupStatus.EnterServerName;
-        currentTicketInfo.lastMessageId = sentMsg.id;
-        this.setTicketSQLValue(currentTicketInfo.ticketId, "last_discord_message", sentMsg.id, SetupStatus.EnterServerName).catch(console.error);
+        ticket.setup_status = SetupStatus.EnterName;
+        ticket.last_discord_message = sentMsg.id;
+        await TicketRepository.shared.updateTicket(ticket);
     }
 
     getEmbed(title, description = null, color = process.env.THEME_COLOR) {
@@ -709,16 +634,14 @@ export default class CustomProjects {
      * @returns {Promise<void>}
      */
     async sendFirstTicketMessage(channel, user) {
-        const ticketRes = await this.createTicket(channel.id, user.id);
-
-        const ticket = ticketRes.insertId;
-        await channel.setName(`ticket-${ticket}`);
-
-        const currentTicketInfo = await this.getCachedTicketFromChannel(channel.id);
+        const ticket = await TicketRepository.shared.fetchTicketByChannelId(channel.id);
 
         const embed = this.getEmbed(
-            "Welcome to your custom plugin ticket!",
-            `Hello <@${user.id}>,\n\nWelcome to your custom plugin ticket with id #${ticket}!\nWe will be asking you a couple of questions regarding your request.`
+            "Welcome to your custom project ticket!",
+            `Hello <@${user.id}>,\n\n
+            Welcome to your custom project ticket with id #${ticket}!\n
+            We will be asking you a couple of questions regarding your request.\n\n
+            ***Please note that you can __not__ send messages in this channel until you have completed the setup process.***`
         );
 
         await channel.send({content: `<@${user.id}>`, embeds: [embed]});
@@ -731,8 +654,8 @@ export default class CustomProjects {
         );
 
         const sent = await channel.send({embeds: [firstMsg]});
-        currentTicketInfo.lastMessageId = sent.id;
-        this.setTicketSQLValue(ticket, "last_discord_message", sent.id).catch(console.error);
+        ticket.last_discord_message = sent.id;
+        await TicketRepository.shared.updateTicket(ticket);
     }
 
     async sendFirstMessage() {
@@ -742,8 +665,12 @@ export default class CustomProjects {
         if (pinnedMessages.size !== 0) return;
 
         const embed = this.getEmbed(
-            "Let's make your Minecraft dream come true!",
-            "**Click the button below to get started!**\nWe will create you a personal ticket channel that we will use to discuss the project with you."
+            "Open a custom project ticket!",
+            `**Need a custom project developed specifically for you?**\n
+            Click the button below to open a ticket and answer a few questions to get started.
+            Our team is dedicated to delivering high-quality solutions and we're here to help bring your vision to life.\n
+            Let's work together to make your project a reality!\n
+            *Click the button below to get started!*`
         );
 
         const actionRow = new ActionRowBuilder()

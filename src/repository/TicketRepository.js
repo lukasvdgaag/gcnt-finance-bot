@@ -17,7 +17,7 @@ export default class TicketRepository extends Repository {
      * @returns {Promise<Ticket>}
      */
     async fetchTicketByChannelId(channelId) {
-        const cachedTicket = this.tickets.find(t => t.discord_channel_id === channelId);
+        const cachedTicket = this.tickets.find(t => t?.discord_channel_id === channelId);
         if (cachedTicket) return cachedTicket;
 
         const res = await this.executeSQL("SELECT * FROM plugin_request_ticket WHERE discord_channel_id = ?", [channelId]);
@@ -41,8 +41,35 @@ export default class TicketRepository extends Repository {
         if (this.tickets.find(t => t.requester_discord_id === discordId)) return true;
 
         const res = await this.executeSQL(`SELECT COUNT(*) AS amount FROM plugin_request_ticket 
-                          WHERE requester_discord_id = ? AND status = ${TicketStatus.Open}`, [discordId]);
+                          WHERE requester_discord_id = ? AND status = ?`, [discordId, TicketStatus.Open]);
         return !res || (res[0]?.amount ?? 0) > 0;
+    }
+
+    /**
+     * Creates a new ticket.
+     * @param {Ticket} ticket Ticket to create.
+     * @returns {Promise<Ticket>} Created ticket.
+     */
+    async createTicket(ticket) {
+        const res = await this.executeSQL(`INSERT INTO plugin_request_ticket (requester_discord_id, discord_channel_id) VALUES (?, ?)`,
+            [ticket.requester_discord_id, ticket.discord_channel_id]);
+
+        return this.fetchTicketById(res.insertId);
+    }
+
+    /**
+     * Update an existing ticket or creates a new one when not existing.
+     * @param {Ticket} ticket Ticket to update.
+     * @returns {Promise<>}
+     */
+    async updateTicket(ticket) {
+        const res = await this.executeSQL(`UPDATE plugin_request_ticket SET description=?, status=?, discord_channel_id=?, name=?, deadline=?, setup_status=?,last_discord_message=?, updated_at=NOW() WHERE id=?`,
+            [ticket.description, ticket.status, ticket.discord_channel_id, ticket.name, ticket.deadline, ticket.setup_status, ticket.last_discord_message, ticket.id]);
+        return res != null;
+    }
+
+    removeCachedTicket(ticket) {
+        this.tickets = this.tickets.filter(t => t.id !== ticket.id);
     }
 
     /**
@@ -53,7 +80,10 @@ export default class TicketRepository extends Repository {
     #storeAndWrapTicket(sqlResult) {
         const ticket = Ticket.fromJson(sqlResult[0]);
 
-        if (ticket) this.tickets[ticket.id] = ticket;
+        if (ticket) {
+            this.tickets = this.tickets.filter(t => t.id !== ticket.id);
+            this.tickets.push(ticket);
+        }
         return ticket;
     }
 

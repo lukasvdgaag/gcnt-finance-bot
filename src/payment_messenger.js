@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import mysql from 'mysql';
 import {EmbedBuilder} from "discord.js";
 
-dotenv.config({path: './.env'});
+dotenv.config();
 
 export default class PaymentMessenger {
 

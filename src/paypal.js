@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import mysql from 'mysql';
 import {XMLHttpRequest} from "xmlhttprequest";
 
-dotenv.config({path: './.env'});
+dotenv.config();
 const formatter = new Intl.NumberFormat('nl-NL', {
     style: 'currency',
     currency: 'EUR',

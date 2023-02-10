@@ -1,3 +1,6 @@
+import TicketSetupStatus from "./TicketSetupStatus.js";
+import TicketStatus from "./TicketStatus.js";
+
 export default class Ticket {
 
     /**
@@ -42,9 +45,15 @@ export default class Ticket {
     setup_status;
     /**
      * ID of the last message sent by the bot in the discord channel
-     * @type {string}
+     * @type {string|null}
      */
     last_discord_message;
+
+    constructor(requesterDiscordId) {
+        this.requester_discord_id = requesterDiscordId;
+        this.status = TicketStatus.Open;
+        this.setup_status = TicketSetupStatus.Budgeting;
+    }
 
     /**
      * Creates a new Ticket object from a JSON object
@@ -62,6 +71,7 @@ export default class Ticket {
             }
             ticket[key] = json[key];
         }
+        if (!json['setup_status']) ticket.setup_status = TicketSetupStatus.Submitted;
         return ticket;
     }
 

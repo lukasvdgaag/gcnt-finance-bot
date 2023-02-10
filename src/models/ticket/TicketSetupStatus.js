@@ -1,6 +1,6 @@
 export default {
     Budgeting: 'BUDGETING',
-    EnterServerName: 'ENTER_SERVER_NAME',
+    EnterName: 'ENTER_NAME',
     EnterDeadline: 'ENTER_DEADLINE',
     EnterProjectDescription: 'ENTER_PLUGIN_DESCRIPTION',
     Submitted: 'SUBMITTED',

@@ -1,6 +1,6 @@
 node_modules/
 out/
-src/.env
+.env
 .idea/
 package-lock.json
 finance-bot.iml
