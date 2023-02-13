@@ -91,74 +91,72 @@ function sendRequest(url, data = undefined, type = "POST", headers = {}) {
     });
 }
 
-function createDraft(userProg) {
-    return new Promise(async function (ok, fail) {
-        const invoiceNumber = userProg.invoice_number;
-        const data = {
-            detail: {
-                invoice_number: invoiceNumber,
-                currency_code: 'EUR',
-                term: 'https://www.gcnt.net/terms-of-service'
+async function createDraft(userProg) {
+    const invoiceNumber = userProg.invoice_number;
+    const data = {
+        detail: {
+            invoice_number: invoiceNumber,
+            currency_code: 'EUR',
+            term: 'https://www.gcnt.net/terms-of-service'
+        },
+        invoicer: {
+            business_name: "GCNT",
+            name: {
+                given_name: "Lukas",
+                surname: "van der Gaag",
             },
-            invoicer: {
-                business_name: "GCNT",
+            email_address: "gaagjescraft@gmail.com",
+            website: 'https://www.gcnt.net/',
+            logo_url: 'https://www.gcnt.net/inc/img/logo.png'
+        },
+        primary_recipients: [{
+            billing_info: {
                 name: {
-                    given_name: "Lukas",
-                    surname: "van der Gaag",
+                    given_name: userProg.customer_info.first_name,
+                    surname: userProg.customer_info.last_name
                 },
-                email_address: "gaagjescraft@gmail.com",
-                website: 'https://www.gcnt.net/',
-                logo_url: 'https://www.gcnt.net/inc/img/logo.png'
-            },
-            primary_recipients: [{
-                billing_info: {
-                    name: {
-                        given_name: userProg.customer_info.first_name,
-                        surname: userProg.customer_info.last_name
-                    },
-                    email_address: userProg.customer_info.email,
-                    business_name: userProg.customer_info.business
-                }
-            }],
-            items: [],
-            configuration: {
-                allow_tip: true,
-                partial_payment: {
-                    allow_partial_payment: true,
-                    allow_partial_payment_amount: {
-                        currency_code: 'EUR',
-                        value: userProg.amount
-                    }
-                },
-                tax_inclusive: false,
+                email_address: userProg.customer_info.email,
+                business_name: userProg.customer_info.business
             }
-        };
-
-        let total = 0;
-
-        for (const item of userProg.items) {
-            let quantity = item.measure_unit === "HOURS" ? item.quantity : 1;
-
-            const itemData = {
-                name: item.name,
-                description: item.description,
-                unit_of_measure: item.measure_unit,
-                unit_amount: {
+        }],
+        items: [],
+        configuration: {
+            allow_tip: true,
+            partial_payment: {
+                allow_partial_payment: true,
+                allow_partial_payment_amount: {
                     currency_code: 'EUR',
-                    value: item.rate
-                },
-                quantity: quantity
-            }
+                    value: userProg.amount
+                }
+            },
+            tax_inclusive: false,
+        }
+    };
 
-            total += quantity * item.rate;
-            data.items.push(itemData);
+    let total = 0;
+
+    for (const item of userProg.items) {
+        let quantity = item.measure_unit === "HOURS" ? item.quantity : 1;
+
+        const itemData = {
+            name: item.name,
+            description: item.description,
+            unit_of_measure: item.measure_unit,
+            unit_amount: {
+                currency_code: 'EUR',
+                value: item.rate
+            },
+            quantity: quantity
         }
 
-        data.configuration.partial_payment.allow_partial_payment_amount.value = Math.round((total / 2) * 100) / 100;
+        total += quantity * item.rate;
+        data.items.push(itemData);
+    }
 
-        const json = JSON.stringify(data);
-        return await sendRequest("https://api.paypal.com/v2/invoicing/invoices", json);
-    });
+    data.configuration.partial_payment.allow_partial_payment_amount.value = Math.round((total / 2) * 100) / 100;
+
+    const json = JSON.stringify(data);
+    return await sendRequest("https://api.paypal.com/v2/invoicing/invoices", json);
 }
 
 async function getQRCode(link) {
