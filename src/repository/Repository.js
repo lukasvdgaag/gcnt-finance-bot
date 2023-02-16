@@ -2,9 +2,6 @@ import mysql from "mysql";
 
 export default class Repository {
 
-    /**
-     * @type {Pool}
-     */
     static pool;
     static {
         Repository.pool = mysql.createPool({
@@ -12,26 +9,26 @@ export default class Repository {
             user: process.env.MYSQL_USER,
             password: process.env.MYSQL_PASS,
             database: process.env.MYSQL_DB,
-            connectionLimit: 10
+            connectionLimit: 10,
         });
     }
 
     async executeSQL(query, values = []) {
-        return new Promise(async (ok, fail) => {
-            Repository.pool.getConnection(function (err, connection) {
+        Repository.pool.getConnection((err, conn) => {
+            if (err) {
+                console.error(err);
+                return null;
+            }
+
+            conn.query(query, values, (err, results, fields) => {
+                conn.release();
+
                 if (err) {
-                    connection.release();
-                    fail(err);
-                    return;
+                    console.error(err);
+                    return null;
                 }
-                connection.query(query, function (err, result) {
-                    connection.release();
-                    if (err) {
-                        fail(err);
-                        return;
-                    }
-                    ok(result ?? null);
-                });
+
+                return results;
             });
         });
     }
