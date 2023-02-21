@@ -1,5 +1,8 @@
 import mysql from 'mysql';
 import {XMLHttpRequest} from "xmlhttprequest";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const formatter = new Intl.NumberFormat('nl-NL', {
     style: 'currency',
@@ -194,8 +197,6 @@ async function lookupTransactions(email, date) {
         startDate.setDate(currentDate.getDate() - 31);
         endDate = currentDate;
     }
-
-    console.log(startDate)
 
     const url = `https://api.paypal.com/v1/reporting/transactions?fields=all&start_date=${startDate.toISOString()}&end_date=${endDate.toISOString()}`;
     /**

@@ -52,7 +52,8 @@ export default class TicketRepository extends Repository {
     }
 
     async hasUserOpenTicket(discordId) {
-        if (this.tickets.find(t => t.requester_discord_id === discordId)) return true;
+        const found = this.tickets.find(t => t.requester_discord_id === discordId);
+        if (found && found.status === TicketStatus.Open) return true;
 
         const res = await this.executeSQL(`SELECT COUNT(*) AS amount
                                            FROM project_request_ticket
@@ -80,7 +81,6 @@ export default class TicketRepository extends Repository {
      * @returns {Promise<Ticket>}
      */
     async updateTicket(ticket) {
-        console.log("ticket:", ticket)
         await this.executeSQL(`UPDATE project_request_ticket
                                            SET description=?,
                                                status=?,

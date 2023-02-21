@@ -18,7 +18,9 @@ import PluginRates from "./models/ticket/PluginRates.js";
 import TicketRepository from "./repository/TicketRepository.js";
 import Ticket from "./models/ticket/Ticket.js";
 import ProjectPricingRepository from "./repository/ProjectPricingRepository.js";
+import dotenv from "dotenv";
 
+dotenv.config();
 export default class CustomProjects {
 
     client; //create new client
@@ -364,7 +366,6 @@ export default class CustomProjects {
         }
 
         const ticket = await TicketRepository.shared.fetchTicketByChannelId(message.channel.id);
-        console.log('ticket found', ticket)
         if (!ticket || ticket.setup_status === SetupStatus.Submitted) {
             return;
         }
@@ -438,7 +439,7 @@ export default class CustomProjects {
             const previousMsg = await channel.messages.fetch(ticket.last_discord_message).catch(console.error);
             if (previousMsg?.deletable) previousMsg?.delete().catch(console.error);
         } catch (e) {
-            console.log(e);
+            console.error(e);
         }
     }
 

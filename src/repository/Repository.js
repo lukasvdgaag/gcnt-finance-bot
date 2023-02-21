@@ -14,21 +14,25 @@ export default class Repository {
     }
 
     async executeSQL(query, values = []) {
-        Repository.pool.getConnection((err, conn) => {
-            if (err) {
-                console.error(err);
-                return null;
-            }
-
-            conn.query(query, values, (err, results, fields) => {
-                conn.release();
-
+        return new Promise((resolve, reject) => {
+            Repository.pool.getConnection((err, conn) => {
                 if (err) {
                     console.error(err);
-                    return null;
+                    resolve(null);
+                    return;
                 }
 
-                return results;
+                conn.query(query, values, (err, results, fields) => {
+                    conn.release();
+
+                    if (err) {
+                        console.error(err);
+                        resolve(null);
+                        return;
+                    }
+
+                    resolve(results);
+                });
             });
         });
     }

@@ -1,6 +1,8 @@
 import {round, sendRequest} from "./paypal.js";
 import mysql from 'mysql';
 import {EmbedBuilder} from "discord.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 export default class PaymentMessenger {
 

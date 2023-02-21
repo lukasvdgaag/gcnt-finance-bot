@@ -36,6 +36,8 @@ import {
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
 } from "discord.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 const InvoiceActionType = {
     CUSTOMER: "CUSTOMER",
@@ -279,7 +281,7 @@ export default class InvoicingBot {
                     .setRequired(false)
                 ));
         } catch (e) {
-            console.log(e);
+            console.error(e);
         }
     }
 
