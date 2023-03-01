@@ -1,21 +1,14 @@
-import mysql from "mysql";
-
 export default class Repository {
 
-    static pool;
-    static {
-        Repository.pool = mysql.createPool({
-            host: process.env.MYSQL_HOST,
-            user: process.env.MYSQL_USER,
-            password: process.env.MYSQL_PASS,
-            database: process.env.MYSQL_DB,
-            connectionLimit: 10,
-        });
+    pool;
+
+    constructor(pool) {
+        this.pool = pool;
     }
 
     async executeSQL(query, values = []) {
         return new Promise((resolve, reject) => {
-            Repository.pool.getConnection((err, conn) => {
+            this.pool.getConnection((err, conn) => {
                 if (err) {
                     console.error(err);
                     resolve(null);

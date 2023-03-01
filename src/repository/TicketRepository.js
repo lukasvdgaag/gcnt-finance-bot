@@ -4,15 +4,13 @@ import TicketStatus from "../models/ticket/TicketStatus.js";
 
 export default class TicketRepository extends Repository {
 
-    static shared = new TicketRepository();
-
     /**
      * @type {[Ticket]}
      */
     tickets = [];
 
-    constructor() {
-        super();
+    constructor(pool) {
+        super(pool);
 
         setInterval(() => this.uncacheOldTickets(), 5 * 60 * 1000);
     }

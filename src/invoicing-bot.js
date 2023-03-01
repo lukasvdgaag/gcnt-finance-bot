@@ -36,8 +36,6 @@ import {
     UserSelectMenuBuilder,
     UserSelectMenuInteraction,
 } from "discord.js";
-import dotenv from "dotenv";
-dotenv.config();
 
 const InvoiceActionType = {
     CUSTOMER: "CUSTOMER",

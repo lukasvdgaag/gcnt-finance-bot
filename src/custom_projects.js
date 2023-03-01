@@ -15,20 +15,22 @@ import {ButtonStyle, ChannelType, MessageType, OverwriteType} from "discord-api-
 import TicketStatus from "./models/ticket/TicketStatus.js";
 import SetupStatus from "./models/ticket/TicketSetupStatus.js";
 import PluginRates from "./models/ticket/PluginRates.js";
-import TicketRepository from "./repository/TicketRepository.js";
 import Ticket from "./models/ticket/Ticket.js";
-import ProjectPricingRepository from "./repository/ProjectPricingRepository.js";
-import dotenv from "dotenv";
+import {RepositoryManager} from "./index.js";
 
-dotenv.config();
 export default class CustomProjects {
 
     client; //create new client
     orderFromUsChannelId = '965377410335924295';
     categoryId = '965377119423197184';
+    
+    ticketRepository;
+    projectPricingRepository;
 
     constructor() {
         this.setupClient().then();
+        this.ticketRepository = RepositoryManager.ticketRepository;
+        this.projectPricingRepository = RepositoryManager.projectPricingRepository;
     }
 
     async setupClient() {
@@ -196,7 +198,7 @@ export default class CustomProjects {
             return false;
         }
 
-        const found = await TicketRepository.shared.fetchTicketByChannelId(interaction.channelId);
+        const found = await this.ticketRepository.fetchTicketByChannelId(interaction.channelId);
         if (!found) {
             await this.replyEmbedWithAutoDelete(interaction, "No order found!",
                 "There is no order associated with the channel that you are executing this command from. " +
@@ -234,7 +236,7 @@ export default class CustomProjects {
      * @returns {Promise<void>}
      */
     async closeTicket(interaction, approve = null) {
-        const ticket = await TicketRepository.shared.fetchTicketByChannelId(interaction.channelId);
+        const ticket = await this.ticketRepository.fetchTicketByChannelId(interaction.channelId);
         if (!ticket) return;
 
         if (!this.isAdmin(this.getGuildMember(interaction.user)) || approve == null) {
@@ -243,10 +245,10 @@ export default class CustomProjects {
             this.revokeAccess(interaction.channel);
 
             ticket.status = TicketStatus.Closed;
-            await TicketRepository.shared.updateTicket(ticket);
+            await this.ticketRepository.updateTicket(ticket);
 
             await interaction.channel.setName(`ticket-${ticket.id}-closed`);
-            TicketRepository.shared.removeCachedTicket(ticket);
+            this.ticketRepository.removeCachedTicket(ticket);
             return;
         }
 
@@ -254,13 +256,13 @@ export default class CustomProjects {
         if (!approve) {
             this.revokeAccess(interaction.channel);
             await interaction.channel.setName(`ticket-${ticket.id}-closed`);
-            TicketRepository.shared.removeCachedTicket(ticket);
+            this.ticketRepository.removeCachedTicket(ticket);
         } else {
             await interaction.channel.setName(`ticket-${ticket.id}`);
         }
 
         ticket.status = approve ? TicketStatus.Approved : TicketStatus.Denied;
-        await TicketRepository.shared.updateTicket(ticket);
+        await this.ticketRepository.updateTicket(ticket);
 
         await this.replyEmbedWithAutoDelete(interaction,
             `Order ${approve ? "approved" : "denied"}!`,
@@ -365,7 +367,7 @@ export default class CustomProjects {
             return;
         }
 
-        const ticket = await TicketRepository.shared.fetchTicketByChannelId(message.channel.id);
+        const ticket = await this.ticketRepository.fetchTicketByChannelId(message.channel.id);
         if (!ticket || ticket.setup_status === SetupStatus.Submitted) {
             return;
         }
@@ -405,7 +407,7 @@ export default class CustomProjects {
             const sent = await message.channel.send({embeds: [embed], components: [interactions]});
             ticket.last_discord_message = sent.id;
 
-            await TicketRepository.shared.updateTicket(ticket);
+            await this.ticketRepository.updateTicket(ticket);
         } else if (ticket.setup_status === SetupStatus.EnterDeadline) {
             if (message?.deletable) message.delete().catch(console.error);
             this.handleDeadlineSetting(message, message.content).catch(console.error);
@@ -418,7 +420,7 @@ export default class CustomProjects {
             ticket.setup_status = SetupStatus.Submitted;
             ticket.last_discord_message = null;
 
-            await TicketRepository.shared.updateTicket(ticket);
+            await this.ticketRepository.updateTicket(ticket);
             await this.sendSummary(message.channel);
 
             const embed = this.getEmbed(`:white_check_mark:  Thanks for answering the questions!`, "We will get back to you as soon as possible.");
@@ -449,7 +451,7 @@ export default class CustomProjects {
      * @returns {Promise<void>}
      */
     async sendSummary(channel) {
-        let ticket = await TicketRepository.shared.fetchTicketByChannelId(channel.id);
+        let ticket = await this.ticketRepository.fetchTicketByChannelId(channel.id);
         if (!ticket) return;
 
         const embed = this.getEmbed('Project Summary', "Here is a summary of the information that you entered about this project.");
@@ -471,7 +473,7 @@ export default class CustomProjects {
      * @returns {Promise<void>}
      */
     async handleDeadlineSetting(interaction, value) {
-        const ticket = await TicketRepository.shared.fetchTicketByChannelId(interaction.channel.id);
+        const ticket = await this.ticketRepository.fetchTicketByChannelId(interaction.channel.id);
         if (ticket == null) return;
 
         if (value != null && value.length > 256) {
@@ -489,13 +491,13 @@ export default class CustomProjects {
         const sent = await interaction.channel.send({embeds: [embed]});
         ticket.last_discord_message = sent.id;
 
-        await TicketRepository.shared.updateTicket(ticket);
+        await this.ticketRepository.updateTicket(ticket);
     }
 
     async openTicket(interaction) {
         const guild = interaction.guild;
         try {
-            if (await TicketRepository.shared.hasUserOpenTicket(interaction.user.id)) {
+            if (await this.ticketRepository.hasUserOpenTicket(interaction.user.id)) {
                 await this.replyEmbedWithAutoDelete(interaction,
                     "You already have an open ticket",
                     "You already have an open ticket. Please close it before opening a new one.",
@@ -503,7 +505,7 @@ export default class CustomProjects {
                 return;
             }
 
-            const createdTicket = await TicketRepository.shared.createTicket(
+            const createdTicket = await this.ticketRepository.createTicket(
                 new Ticket(interaction.user.id)
             );
 
@@ -520,7 +522,7 @@ export default class CustomProjects {
             });
 
             createdTicket.discord_channel_id = createdChannel.id;
-            await TicketRepository.shared.updateTicket(createdTicket);
+            await this.ticketRepository.updateTicket(createdTicket);
 
             await this.giveUserPermission(createdChannel, interaction.user);
 
@@ -540,7 +542,7 @@ export default class CustomProjects {
     async createPricingLink(ticket) {
         // create new UUID
         try {
-            const pricing = await ProjectPricingRepository.shared.createProjectPricing(ticket);
+            const pricing = await this.projectPricingRepository.createProjectPricing(ticket);
             if (pricing) return `${process.env.WEBSITE_URL}/pricing?id=${encodeURIComponent(pricing.id)}&token=${encodeURIComponent(pricing.token)}&ticket_id=${pricing.ticket}`;
         } catch (e) {
             console.error(e);
@@ -549,7 +551,7 @@ export default class CustomProjects {
     }
 
     async handlePricingUpdate(pricingId, ticketId, body) {
-        const ticket = await TicketRepository.shared.fetchTicketById(body.ticket_id);
+        const ticket = await this.ticketRepository.fetchTicketById(body.ticket_id);
         if (!ticket) return;
 
         const channel = await this.client.channels.fetch(ticket.discord_channel_id).catch(console.error);
@@ -618,7 +620,7 @@ export default class CustomProjects {
         console.log('Updating ticket status to EnterName');
         ticket.setup_status = SetupStatus.EnterName;
         ticket.last_discord_message = sentMsg.id;
-        await TicketRepository.shared.updateTicket(ticket);
+        await this.ticketRepository.updateTicket(ticket);
     }
 
     getEmbed(title, description = null, color = process.env.THEME_COLOR) {
@@ -635,7 +637,7 @@ export default class CustomProjects {
      * @returns {Promise<void>}
      */
     async sendFirstTicketMessage(channel, user) {
-        const ticket = await TicketRepository.shared.fetchTicketByChannelId(channel.id);
+        const ticket = await this.ticketRepository.fetchTicketByChannelId(channel.id);
 
         const embed = this.getEmbed(
             "Welcome to your custom project ticket!",
@@ -656,7 +658,7 @@ export default class CustomProjects {
 
         const sent = await channel.send({embeds: [firstMsg]});
         ticket.last_discord_message = sent.id;
-        await TicketRepository.shared.updateTicket(ticket);
+        await this.ticketRepository.updateTicket(ticket);
     }
 
     async sendFirstMessage() {

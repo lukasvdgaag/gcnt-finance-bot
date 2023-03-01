@@ -1,8 +1,6 @@
 import {round, sendRequest} from "./paypal.js";
-import mysql from 'mysql';
 import {EmbedBuilder} from "discord.js";
-import dotenv from "dotenv";
-dotenv.config();
+import {RepositoryManager} from "./index.js";
 
 export default class PaymentMessenger {
 
@@ -10,15 +8,6 @@ export default class PaymentMessenger {
 
     constructor(client) {
         this.#client = client;
-    }
-
-    #getConnection() {
-        return mysql.createConnection({
-            host: process.env.MYSQL_HOST,
-            user: process.env.MYSQL_USER,
-            password: process.env.MYSQL_PASS,
-            database: 'gaagjescraft'
-        });
     }
 
     async processMessage(msg) {
@@ -125,50 +114,10 @@ export default class PaymentMessenger {
     }
 
     async #getTransactionInfo(transactionId) {
-        const clas = this;
-        return new Promise(async function (ok, fail) {
-            const con = clas.#getConnection();
-            con.connect(function (err) {
-                if (err) {
-                    fail(err);
-                    return;
-                }
-                con.query(`SELECT *, p.name AS plugin_title
-                           FROM mygcnt_payments AS mp
-                                    LEFT JOIN plugins p on mp.plugin_id = p.id
-                           WHERE txnid = ?;`
-                    , [transactionId],
-                    function (err, result) {
-                        if (err) {
-                            fail(err);
-                            return;
-                        }
-                        ok(result[0] ?? null);
-                    });
-            });
-        });
+        return await RepositoryManager.payPalRepository.fetchTransactionInformation(transactionId);
     }
 
     async #getUserInfo(userId) {
-        const clas = this;
-        return new Promise(async function (ok, fail) {
-            const con = clas.#getConnection();
-            con.connect(function (err) {
-                if (err) {
-                    fail(err);
-                    return;
-                }
-                con.query(`SELECT discord
-                           FROM users
-                           WHERE id = ?;`, [userId],
-                    function (err, result) {
-                        if (err) {
-                            fail(err);
-                            return;
-                        }
-                        ok(result[0] ?? null);
-                    });
-            });
-        });
+        return await RepositoryManager.payPalRepository.getUserInformation(userId);
     }
 }

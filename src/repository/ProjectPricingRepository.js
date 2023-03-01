@@ -4,7 +4,9 @@ import {v4 as uuid} from "uuid";
 
 export default class ProjectPricingRepository extends Repository {
 
-    static shared = new ProjectPricingRepository();
+    constructor(pool) {
+        super(pool);
+    }
 
     /**
      * Creates a new project pricing.

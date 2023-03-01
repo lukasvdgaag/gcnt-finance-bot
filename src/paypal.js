@@ -1,8 +1,5 @@
-import mysql from 'mysql';
 import {XMLHttpRequest} from "xmlhttprequest";
-import dotenv from "dotenv";
-
-dotenv.config();
+import {RepositoryManager} from "./index.js";
 
 const formatter = new Intl.NumberFormat('nl-NL', {
     style: 'currency',
@@ -11,41 +8,7 @@ const formatter = new Intl.NumberFormat('nl-NL', {
 let accessToken = "";
 
 async function getPayPalUserInfo(userDiscord) {
-    return new Promise(async function (ok, fail) {
-        if (userDiscord == null) {
-            ok(null);
-            return;
-        }
-
-        const con = mysql.createConnection({
-            host: process.env.MYSQL_HOST,
-            user: process.env.MYSQL_USER,
-            password: process.env.MYSQL_PASS,
-            database: 'gaagjescraft'
-        });
-        con.connect(function (err) {
-            if (err) {
-                fail(err);
-                return;
-            }
-            con.query(`SELECT COALESCE(p.first_name, u.first_name) AS first_name,
-                              COALESCE(p.last_name, u.last_name)   AS last_name,
-                              COALESCE(p.email, u.email)           AS email,
-                              p.business
-                       FROM users AS u
-                                LEFT JOIN user_paypal p ON u.id = p.user
-                       WHERE u.discord_id = ?
-                         AND u.discord_verified = 1
-                       LIMIT 1;`, [userDiscord],
-                function (err, result, fields) {
-                    if (err) {
-                        fail(err);
-                        return;
-                    }
-                    ok(result[0] ?? null);
-                });
-        });
-    });
+    return await RepositoryManager.payPalRepository.fetchPayPalUserInformation(userDiscord);
 }
 
 async function getAccessToken() {
