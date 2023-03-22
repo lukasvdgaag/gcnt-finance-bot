@@ -16,8 +16,12 @@ export default class TicketRepository extends Repository {
     }
 
     uncacheOldTickets() {
-        // remove tickets where the updated_at field is more than 15 minutes ago.
-        this.tickets = this.tickets.filter(t => Date.now() - t.updated_at > 15 * 60 * 1000);
+        try {
+            // remove tickets where the updated_at field is more than 15 minutes ago.
+            this.tickets = this.tickets.filter(t => Date.now() - t.updated_at > 15 * 60 * 1000);
+        } catch (e) {
+            console.error(e);
+        }
     }
 
     /**
@@ -26,11 +30,16 @@ export default class TicketRepository extends Repository {
      * @returns {Promise<Ticket>}
      */
     async fetchTicketByChannelId(channelId) {
-        const cachedTicket = this.tickets.find(t => t?.discord_channel_id === channelId);
-        if (cachedTicket) return cachedTicket;
+        try {
+            const cachedTicket = this.tickets.find(t => t?.discord_channel_id === channelId);
+            if (cachedTicket) return cachedTicket;
 
-        const res = await this.executeSQL("SELECT * FROM project_request_ticket WHERE discord_channel_id = ?", [channelId]);
-        return this.#storeAndWrapTicket(res);
+            const res = await this.executeSQL("SELECT * FROM project_request_ticket WHERE discord_channel_id = ?", [channelId]);
+            return this.#storeAndWrapTicket(res);
+        } catch (e) {
+            console.error(e);
+            return null;
+        }
     }
 
     /**

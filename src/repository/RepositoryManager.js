@@ -17,6 +17,7 @@ export default class RepositoryManager {
             password: process.env.MYSQL_PASS,
             database: process.env.MYSQL_DB,
             connectionLimit: 10,
+            enableKeepAlive: true,
         });
 
         this.createTicketRepo();
