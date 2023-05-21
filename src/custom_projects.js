@@ -23,8 +23,14 @@ export default class CustomProjects {
     client; //create new client
     orderFromUsChannelId = '965377410335924295';
     categoryId = '965377119423197184';
-    
+
+    /**
+     * @type {TicketRepository}
+     */
     ticketRepository;
+    /**
+     * @type {ProjectPricingRepository}
+     */
     projectPricingRepository;
 
     constructor() {
@@ -64,6 +70,11 @@ export default class CustomProjects {
                 await this.handleCommand(interaction);
             }
         });
+        this.client.on('channelDelete', async (channel) => {
+            if (channel.parentId !== this.categoryId) return;
+
+            await this.deleteTicket(channel, true);
+        });
 
         const token = process.env.CLIENT_TOKEN_CUSTOM_PROJECTS;
         await this.client.login(token); //login bot using token
@@ -89,6 +100,13 @@ export default class CustomProjects {
             case "close":
                 if (!await this.checkForChannelId(interaction)) break;
                 await this.closeTicket(interaction, interaction.options.getBoolean("approve", false) ?? null);
+                break;
+            case "delete":
+                await this.deleteTicket(interaction);
+                break;
+            case "rename":
+                if (!await this.checkForChannelId(interaction)) break;
+                await this.renameTicket(interaction, interaction.options.getString("name", false) ?? null)
                 break;
             case "adduser":
                 if (!await this.checkForChannelId(interaction)) break;
@@ -230,6 +248,57 @@ export default class CustomProjects {
         });
     }
 
+    async renameTicket(interaction, newName) {
+        if (!this.isAdmin(this.getGuildMember(interaction.user))) {
+            await this.replyEmbedWithAutoDelete(
+                interaction,
+                "No permission!",
+                `You are not permitted to rename this order.`,
+                "#f54257",
+                true,
+            );
+            return;
+        }
+
+        await interaction.channel.setName(newName);
+
+        await this.replyEmbedWithAutoDelete(
+            interaction,
+            "Order renamed!",
+            "The order has been renamed to `" + newName + "` by <@" + interaction.user.id + ">.",
+            "#46d846",
+            false,
+            false
+        );
+    }
+
+    async deleteTicket(interaction, force = false) {
+        const ticket = await this.ticketRepository.fetchTicketByChannelId(interaction.channelId ?? interaction.id);
+        if (!ticket) return;
+
+        if (!force && !this.isAdmin(this.getGuildMember(interaction.user))) {
+            await this.replyEmbedWithAutoDelete(
+                interaction,
+                "No permission!",
+                `You are not permitted to delete this order. Use \`/order close\` to close the order instead.`,
+                "#f54257",
+                true,
+            );
+            return;
+        }
+
+        if (ticket.status !== TicketStatus.Open && ticket.status !== TicketStatus.UnderReview) {
+            ticket.status = TicketStatus.Closed;
+            await this.ticketRepository.updateTicket(ticket);
+        }
+
+        try {
+            await interaction.channel.delete();
+        } catch (e) {}
+
+        this.ticketRepository.removeCachedTicket(ticket);
+    }
+
     /**
      * @param {CommandInteraction} interaction
      * @param {boolean|null} approve
@@ -294,6 +363,22 @@ export default class CustomProjects {
                             required: false,
                         }
                     ]
+                }, {
+                    type: 1,
+                    name: 'delete',
+                    description: 'Delete the current custom project request ticket.',
+                }, {
+                    type: 1,
+                    name: 'rename',
+                    description: 'Rename the current custom project request ticket.',
+                    options: [
+                        {
+                            type: 3,
+                            name: 'name',
+                            description: 'The new name for the order.',
+                            required: true,
+                        }
+                    ],
                 },
                 {
                     type: 1,
